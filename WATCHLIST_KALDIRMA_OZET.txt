@@ -1,0 +1,240 @@
+═══════════════════════════════════════════════════════════════════
+  ✅ EMA WATCHLIST KALDIRILDI - DİĞER MODÜLLER GİBİ ÇALIŞIYOR
+═══════════════════════════════════════════════════════════════════
+
+🔄 NE DEĞİŞTİ?
+───────────────────────────────────────────────────────────────────
+
+ÖNCEDEN (Yanlış Anlaşılma!):
+   ❌ Sabit sembol listesi: THYAO,PETKM,SASA...
+   ❌ Her sembol için request.security() çağrısı
+   ❌ 120+ request.security çağrısı (40 × 3)
+   ❌ Karmaşık watchlist tarama kodu
+
+ŞİMDİ (Doğru!):
+   ✅ Sadece açık grafikteki hisse için çalışır
+   ✅ SuperDip, Pullback, E2 ile aynı yapı
+   ✅ 3 request.security çağrısı (mevcut hisse)
+   ✅ Basit ve anlaşılır kod
+
+═══════════════════════════════════════════════════════════════════
+❌ KALDIRILAN ÖZELLIKLER
+═══════════════════════════════════════════════════════════════════
+
+Input'lar:
+   ❌ ema_watch_enable
+   ❌ ema_watch_prefix
+   ❌ ema_watch_symbols
+   ❌ ema_watch_buy_chat_id
+   ❌ ema_watch_sell_chat_id
+   ❌ grpEMAWatch
+
+Fonksiyonlar:
+   ❌ f_ema_parse_symbols()
+   ❌ f_ema_check_symbol()
+   ❌ Watchlist tarama kodu (120+ satır)
+
+Mesajlar:
+   ❌ Toplu BUY/SELL mesajları
+
+═══════════════════════════════════════════════════════════════════
+✅ KALAN ÖZELLIKLER (Aktif!)
+═══════════════════════════════════════════════════════════════════
+
+Input'lar:
+   ✅ ema_enable
+   ✅ ema_fast (varsayılan: 5)
+   ✅ ema_slow (varsayılan: 137)
+   ✅ ema_enable_buy
+   ✅ ema_enable_sell (varsayılan: kapalı)
+   ✅ ema_buy_chat_id
+   ✅ ema_sell_chat_id
+   ✅ ema_cooldown_min (60 dk)
+   ✅ ema_show_labels
+
+Sinyaller:
+   ✅ BUY: 1H EMA5 yukarı kesti EMA137 + 15m state
+   ✅ SELL: 1H EMA5 aşağı kesti EMA137 + 15m state
+
+Alert'ler:
+   ✅ EMA CROSS BUY (1H+15m)
+   ✅ EMA CROSS SELL (1H+15m)
+
+═══════════════════════════════════════════════════════════════════
+🎯 NASIL KULLANILIR?
+═══════════════════════════════════════════════════════════════════
+
+ADIM 1: Script'i Yükleyin
+───────────────────────────────────────────────────────────────────
+   1. TradingView Pine Editor (Alt+E)
+   2. Pullbackformasyon ve dip_v7.txt kopyala/yapıştır
+   3. Kaydet → Grafiğe Ekle
+
+ADIM 2: İzlemek İstediğiniz Hisseyi Açın
+───────────────────────────────────────────────────────────────────
+   Örnek:
+   • BIST:THYAO için → THYAO grafiğini açın
+   • BIST:PETKM için → PETKM grafiğini açın
+   • BIST:SASA için → SASA grafiğini açın
+
+ADIM 3: Alert Kurun (Her Hisse İçin)
+───────────────────────────────────────────────────────────────────
+   1. Alert oluştur (⏰ ikonu)
+   2. Condition: "EMA CROSS BUY (1H+15m)"
+   3. Alert name: "THYAO EMA BUY" (örnek)
+   4. Notifications: ✓ App/Webhook
+   5. Create
+
+ADIM 4: Diğer Hisseler İçin Tekrarlayın
+───────────────────────────────────────────────────────────────────
+   • Her hisse için ayrı alert kurun
+   • TradingView'un standart yöntemi bu şekilde
+   • SuperDip ve Pullback ile aynı
+
+═══════════════════════════════════════════════════════════════════
+💡 ÖRNEK: 5 HİSSE TAKİP ETMEK
+═══════════════════════════════════════════════────════════════════
+
+Hisseler: THYAO, PETKM, SASA, AKBNK, EREGL
+
+1. THYAO grafiği → Alert: "THYAO EMA BUY"
+2. PETKM grafiği → Alert: "PETKM EMA BUY"
+3. SASA grafiği → Alert: "SASA EMA BUY"
+4. AKBNK grafiği → Alert: "AKBNK EMA BUY"
+5. EREGL grafiği → Alert: "EREGL EMA BUY"
+
+Sonuç:
+   → 5 hisse için 5 ayrı alert
+   → Her alert o hisse için tetiklenir
+   → Telegram'a mesaj gider
+   → TradingView notification alırsınız
+
+═══════════════════════════════════════════════════════════════════
+📱 MESAJ FORMATI
+═══════════════════════════════════════════════════════════════════
+
+BUY Mesajı (Tek Hisse):
+───────────────────────────────────────────────────────────────────
+   ⚡ EMA CROSS 1H • BUY (AL)
+   HISSE: THYAO | FIYAT: 315.50
+   
+   TETİK: 1H EMA5 yukarı kesti EMA137
+   ONAY: 15m EMA5 > EMA137 (STATE)
+   
+   1H EMA5: 315.50
+   1H EMA137: 310.00
+   15m EMA5: 316.00
+   15m EMA137: 311.00
+
+SELL Mesajı (Tek Hisse):
+───────────────────────────────────────────────────────────────────
+   ⚡ EMA CROSS 1H • SELL (SAT)
+   HISSE: THYAO | FIYAT: 308.00
+   
+   TETİK: 1H EMA5 aşağı kesti EMA137
+   ONAY: 15m EMA5 < EMA137 (STATE)
+   
+   1H EMA5: 308.00
+   1H EMA137: 310.00
+   15m EMA5: 307.50
+   15m EMA137: 309.00
+
+═══════════════════════════════════════════════════════════════════
+❓ SIK SORULAN SORULAR
+═══════════════════════════════════════════════════════════════════
+
+S: Watchlist tarama neden kaldırıldı?
+C: Kullanıcı isteği. Diğer modüller gibi çalışması için.
+   Ayrıca request.security limiti sorunu çözüldü.
+
+S: Birden fazla hisseyi nasıl takip ederim?
+C: Her hisse için ayrı grafik açıp ayrı alert kurarsınız.
+   TradingView'un standart yöntemi bu.
+
+S: Her hisse için ayrı script mi yüklemeliyim?
+C: HAYIR! Aynı script tüm hisselerde çalışır.
+   Sadece her hisse için ayrı alert kurarsınız.
+
+S: Alert limiti var mı?
+C: TradingView planınıza göre:
+   • Free: 1 aktif alert
+   • Pro: 20 aktif alert
+   • Pro+: 100 aktif alert
+   • Premium: 400 aktif alert
+
+S: Telegram mesajları hala gelir mi?
+C: EVET! Her alert Telegram'a mesaj gönderir.
+
+═══════════════════════════════════════════════════════════════════
+📊 DİĞER MODÜLLERLE KARŞILAŞTIRMA
+═══════════════════════════════════════════════════════════════════
+
+                     EMA   SuperDip  Pullback  E2
+   ───────────────────────────────────────────────────────
+   Çalışma Şekli:    Mevcut  Mevcut   Mevcut   Mevcut
+                     grafik  grafik   grafik   grafik
+   
+   Watchlist:        ❌      ❌       ❌       ❌
+   
+   Alert Sistemi:    ✅      ✅       ✅       ✅
+                     TV      TV       TV       TV
+   
+   Telegram:         ✅      ✅       ✅       ✅
+   
+   request.security: 3       ~5       ~3       ~5
+   çağrısı
+
+═══════════════════════════════════════════════════════════════════
+✅ AVANTAJLAR
+═══════════════════════════════════════════════════════════════════
+
+1. Basitlik
+   ✓ Kod çok daha basit
+   ✓ Karmaşık watchlist yok
+   ✓ Bakımı kolay
+
+2. Request.security Limiti Çözüldü
+   ✓ Önceden: 120+ çağrı (40 × 3)
+   ✓ Şimdi: 3 çağrı
+   ✓ Limit sorunu tamamen ortadan kalktı
+
+3. TradingView Standartlarına Uyum
+   ✓ Diğer göstergeler gibi
+   ✓ Alert sistemi ile uyumlu
+   ✓ Kullanıcılar için tanıdık
+
+4. Esneklik
+   ✓ İstediğiniz hisseyi izleyin
+   ✓ Alert sayısını planınıza göre ayarlayın
+   ✓ Chat ID'leri hisse bazlı ayarlayın
+
+═══════════════════════════════════════════════════════════════════
+🎉 SONUÇ
+═══════════════════════════════════════════════════════════════════
+
+EMA modülü artık diğer modüller gibi çalışıyor:
+
+   ✅ Sadece açık grafikteki hisse için sinyal
+   ✅ TradingView alert sistemi ile uyumlu
+   ✅ Request.security limiti sorunu yok
+   ✅ Basit ve anlaşılır kod
+   ✅ Telegram entegrasyonu çalışıyor
+   ✅ SuperDip, Pullback, E2 ile aynı yapı
+
+Kullanım:
+   Her izlemek istediğiniz hisse için
+   TradingView'da ayrı alert kurun!
+
+═══════════════════════════════════════════════════════════════════
+📞 DAHA FAZLA BİLGİ
+═══════════════════════════════════════════════════════════════════
+
+→ EMA_WATCHLIST_KALDIRILDI.md  (Detaylı açıklama)
+→ CHAT_ID_AYARLARI.md          (Chat ID ayarları)
+→ TURKCE_ACIKLAMA.md           (Genel kullanım)
+
+═══════════════════════════════════════════════════════════════════
+Durum: ✅ TAMAMLANDI
+Tarih: 07.02.2026
+Versiyon: v7.1
+═══════════════════════════════════════════════════════════════════
