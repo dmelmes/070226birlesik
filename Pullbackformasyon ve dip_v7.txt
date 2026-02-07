@@ -139,6 +139,26 @@ grpSatSem="SAT Mesaj Semantiği"
 sellSplit=input.bool(false,"İki Tip SAT (KAR AL vs ÇIKIŞ)",group=grpSatSem)  //false yaptim KAR AL mesajlari önce kapansin diye. duruma göre ac. 
 sellExitThreshold=input.float(90,"ÇIKIŞ için YS Eşik",minval=80,step=5,group=grpSatSem)
 
+// ===================== EMA CROSS MODULE (1H + 15m Confirm) =====================
+grpEMA="EMA Cross (1H + 15m Onay)"
+ema_enable=input.bool(true,"EMA Cross Modülü Aktif",group=grpEMA)
+ema_fast=input.int(5,"EMA Fast (Hızlı)",minval=1,group=grpEMA)
+ema_slow=input.int(137,"EMA Slow (Yavaş)",minval=1,group=grpEMA)
+ema_enable_buy=input.bool(true,"BUY Sinyalleri Aktif",group=grpEMA)
+ema_enable_sell=input.bool(false,"SELL Sinyalleri Aktif",group=grpEMA,tooltip="Varsayılan: Kapalı. Açıldığında SELL sinyalleri gönderilir.")
+ema_buy_chat_id=input.string("-1002781417418","EMA BUY chat_id",group=grpEMA)
+ema_sell_chat_id=input.string("-1002587291984","EMA SELL chat_id",group=grpEMA)
+ema_cooldown_min=input.int(60,"EMA Cooldown (dk)",minval=0,group=grpEMA)
+ema_show_labels=input.bool(true,"EMA Label Göster",group=grpEMA)
+
+// EMA Watchlist Scan
+grpEMAWatch="EMA Watchlist Tarama"
+ema_watch_enable=input.bool(true,"Watchlist Tarama Aktif",group=grpEMAWatch)
+ema_watch_prefix=input.string("BIST:","Sembol Prefix",group=grpEMAWatch)
+ema_watch_symbols=input.string("THYAO,PETKM,SASA,SAHOL,AKBNK,EREGL,KCHOL,GARAN,ISCTR,VAKBN,TUPRS,TAVHL,SISE,TTKOM,KOZAL,KOZAA,FROTO,ASELS,ARCLK,EKGYO,YKBNK,HALKB,ENJSA,TCELL,PGSUS,BIMAS,ODAS,AEFES,MAVI,LOGO,MGROS,SOKM,BRISA,VESBE,VESTL,ANHYT,BUCIM,ENKAI,ALARK,DOAS","Sembol Listesi (virgülle ayrılmış, max 40)",group=grpEMAWatch,tooltip="Max 40 sembol. Örn: THYAO,PETKM,SASA")
+ema_watch_buy_chat_id=input.string("","Watchlist BUY chat_id (boşsa ana BUY chat_id kullanılır)",group=grpEMAWatch)
+ema_watch_sell_chat_id=input.string("","Watchlist SELL chat_id (boşsa ana SELL chat_id kullanılır)",group=grpEMAWatch)
+
 // ===================== Yardımcılar =====================
 f_clamp_extreme(v, maxAbs)=>
     na(v) ? na : (v > maxAbs ? maxAbs : v < -maxAbs ? -maxAbs : v)
@@ -1798,6 +1818,189 @@ if db_show_debug and barstate.islast
         " vol:"+str.tostring(volOk4h)+
         " pb:"+str.tostring(pbOk),
         style=label.style_label_left, color=color.new(color.purple, 0), textcolor=color.white, size=size.tiny)
+
+// =====================================================================
+// ===================== 3.5) EMA CROSS MODULE (1H + 15m Confirm) =======
+// EMA Cross: 1H timeframe trigger with 15m state confirmation
+// BUY: 1H EMA5 crosses above EMA137 AND 15m EMA5 > EMA137 (state)
+// SELL: 1H EMA5 crosses below EMA137 AND 15m EMA5 < EMA137 (state)
+// SELL disabled by default
+// =====================================================================
+
+// Cooldown tracking
+var int ema_lastBuyTime = na
+var int ema_lastSellTime = na
+
+// Calculate EMAs on 1H and 15m timeframes
+[ema1h_fast, ema1h_slow, is1hClose] = request.security(syminfo.tickerid, "60", 
+    [ta.ema(close, ema_fast), ta.ema(close, ema_slow), barstate.isconfirmed], 
+    barmerge.gaps_off, barmerge.lookahead_off)
+
+[ema15m_fast, ema15m_slow] = request.security(syminfo.tickerid, "15", 
+    [ta.ema(close, ema_fast), ta.ema(close, ema_slow)], 
+    barmerge.gaps_off, barmerge.lookahead_off)
+
+// Previous values for cross detection
+[ema1h_fast_prev, ema1h_slow_prev] = request.security(syminfo.tickerid, "60", 
+    [ta.ema(close[1], ema_fast), ta.ema(close[1], ema_slow)], 
+    barmerge.gaps_off, barmerge.lookahead_off)
+
+// Detect 1H crosses (confirmed bar only)
+ema_1h_cross_up = is1hClose and ema1h_fast > ema1h_slow and ema1h_fast_prev <= ema1h_slow_prev
+ema_1h_cross_down = is1hClose and ema1h_fast < ema1h_slow and ema1h_fast_prev >= ema1h_slow_prev
+
+// 15m state confirmation (not cross, just state)
+ema_15m_state_bullish = ema15m_fast > ema15m_slow
+ema_15m_state_bearish = ema15m_fast < ema15m_slow
+
+// Cooldown check
+ema_cooldown_ok_buy = na(ema_lastBuyTime) or ((time - ema_lastBuyTime) >= (ema_cooldown_min * 60000))
+ema_cooldown_ok_sell = na(ema_lastSellTime) or ((time - ema_lastSellTime) >= (ema_cooldown_min * 60000))
+
+// Final BUY signal: 1H cross up AND 15m state bullish AND cooldown ok
+ema_buy_signal = ema_enable and ema_enable_buy and ema_1h_cross_up and ema_15m_state_bullish and ema_cooldown_ok_buy
+
+// Final SELL signal: 1H cross down AND 15m state bearish AND cooldown ok AND sell enabled
+ema_sell_signal = ema_enable and ema_enable_sell and ema_1h_cross_down and ema_15m_state_bearish and ema_cooldown_ok_sell
+
+// Build EMA message function
+f_ema_build_msg(isBuy) =>
+    lines = array.new_string()
+    signalType = isBuy ? "BUY (AL)" : "SELL (SAT)"
+    array.push(lines, "⚡ EMA CROSS 1H • " + signalType)
+    array.push(lines, "HISSE: " + syminfo.ticker + " | FIYAT: " + fmtMintMsg(close))
+    array.push(lines, "")
+    array.push(lines, "TETİK: 1H EMA" + str.tostring(ema_fast) + " " + (isBuy ? "yukarı kesti" : "aşağı kesti") + " EMA" + str.tostring(ema_slow))
+    array.push(lines, "ONAY: 15m EMA" + str.tostring(ema_fast) + " " + (isBuy ? ">" : "<") + " EMA" + str.tostring(ema_slow) + " (STATE)")
+    array.push(lines, "")
+    array.push(lines, "1H EMA" + str.tostring(ema_fast) + ": " + fmtMintMsg(ema1h_fast))
+    array.push(lines, "1H EMA" + str.tostring(ema_slow) + ": " + fmtMintMsg(ema1h_slow))
+    array.push(lines, "15m EMA" + str.tostring(ema_fast) + ": " + fmtMintMsg(ema15m_fast))
+    array.push(lines, "15m EMA" + str.tostring(ema_slow) + ": " + fmtMintMsg(ema15m_slow))
+    f_lineJoin(lines)
+
+// Send alerts for single symbol
+if ema_buy_signal
+    send_msg(ema_buy_chat_id, f_ema_build_msg(true))
+    ema_lastBuyTime := time
+    if ema_show_labels
+        label.new(bar_index, low, "EMA\nBUY", 
+            style=label.style_label_up, color=color.new(color.green, 0), 
+            textcolor=color.white, size=size.small)
+
+if ema_sell_signal
+    send_msg(ema_sell_chat_id, f_ema_build_msg(false))
+    ema_lastSellTime := time
+    if ema_show_labels
+        label.new(bar_index, high, "EMA\nSELL", 
+            style=label.style_label_down, color=color.new(color.red, 0), 
+            textcolor=color.white, size=size.small)
+
+// ========== WATCHLIST SCANNING ==========
+
+// Parse symbol list (max 40 symbols)
+f_ema_parse_symbols() =>
+    var symbolArray = array.new_string()
+    if barstate.isfirst
+        array.clear(symbolArray)
+        rawList = ema_watch_symbols
+        symbolCount = 0
+        currentSymbol = ""
+        for i = 0 to str.length(rawList) - 1
+            char = str.substring(rawList, i, i + 1)
+            if char == ","
+                if str.length(currentSymbol) > 0 and symbolCount < 40
+                    array.push(symbolArray, ema_watch_prefix + currentSymbol)
+                    symbolCount += 1
+                currentSymbol := ""
+            else if char != " "
+                currentSymbol += char
+        // Add last symbol
+        if str.length(currentSymbol) > 0 and symbolCount < 40
+            array.push(symbolArray, ema_watch_prefix + currentSymbol)
+    symbolArray
+
+// Function to check EMA cross for a symbol
+f_ema_check_symbol(tickerStr) =>
+    [fast1h, slow1h, confirmed1h] = request.security(tickerStr, "60", 
+        [ta.ema(close, ema_fast), ta.ema(close, ema_slow), barstate.isconfirmed], 
+        barmerge.gaps_off, barmerge.lookahead_off)
+    [fast15m, slow15m] = request.security(tickerStr, "15", 
+        [ta.ema(close, ema_fast), ta.ema(close, ema_slow)], 
+        barmerge.gaps_off, barmerge.lookahead_off)
+    [fast1h_prev, slow1h_prev] = request.security(tickerStr, "60", 
+        [ta.ema(close[1], ema_fast), ta.ema(close[1], ema_slow)], 
+        barmerge.gaps_off, barmerge.lookahead_off)
+    
+    cross_up = confirmed1h and fast1h > slow1h and fast1h_prev <= slow1h_prev
+    cross_down = confirmed1h and fast1h < slow1h and fast1h_prev >= slow1h_prev
+    state_bull = fast15m > slow15m
+    state_bear = fast15m < slow15m
+    
+    buyOk = cross_up and state_bull
+    sellOk = cross_down and state_bear
+    [buyOk, sellOk]
+
+// Watchlist scan on 1H close
+var int ema_watch_lastScanTime = na
+ema_watch_cooldown_ok = na(ema_watch_lastScanTime) or ((time - ema_watch_lastScanTime) >= (ema_cooldown_min * 60000))
+
+if ema_enable and ema_watch_enable and is1hClose and ema_watch_cooldown_ok
+    symbols = f_ema_parse_symbols()
+    buyList = array.new_string()
+    sellList = array.new_string()
+    
+    // Scan each symbol
+    symbolCount = array.size(symbols)
+    if symbolCount > 0
+        for i = 0 to math.min(symbolCount - 1, 39)
+            ticker = array.get(symbols, i)
+            [buyOk, sellOk] = f_ema_check_symbol(ticker)
+            
+            if buyOk
+                // Remove prefix for display
+                displayName = str.replace(ticker, ema_watch_prefix, "")
+                array.push(buyList, displayName)
+            
+            if sellOk and ema_enable_sell
+                // Remove prefix for display
+                displayName = str.replace(ticker, ema_watch_prefix, "")
+                array.push(sellList, displayName)
+    
+    // Send aggregated BUY message
+    if array.size(buyList) > 0
+        buyMsg = "⚡ EMA CROSS 1H TARAMA • BUY (AL)\n\n"
+        buyMsg += "TETİK: 1H EMA" + str.tostring(ema_fast) + " yukarı kesti EMA" + str.tostring(ema_slow) + "\n"
+        buyMsg += "ONAY: 15m EMA" + str.tostring(ema_fast) + " > EMA" + str.tostring(ema_slow) + " (STATE)\n\n"
+        buyMsg += "HISSELER (" + str.tostring(array.size(buyList)) + "):\n"
+        for i = 0 to array.size(buyList) - 1
+            buyMsg += "• " + array.get(buyList, i)
+            if i < array.size(buyList) - 1
+                buyMsg += "\n"
+        
+        watchBuyChatId = str.length(ema_watch_buy_chat_id) > 0 ? ema_watch_buy_chat_id : ema_buy_chat_id
+        send_msg(watchBuyChatId, buyMsg)
+    
+    // Send aggregated SELL message (only if SELL enabled)
+    if ema_enable_sell and array.size(sellList) > 0
+        sellMsg = "⚡ EMA CROSS 1H TARAMA • SELL (SAT)\n\n"
+        sellMsg += "TETİK: 1H EMA" + str.tostring(ema_fast) + " aşağı kesti EMA" + str.tostring(ema_slow) + "\n"
+        sellMsg += "ONAY: 15m EMA" + str.tostring(ema_fast) + " < EMA" + str.tostring(ema_slow) + " (STATE)\n\n"
+        sellMsg += "HISSELER (" + str.tostring(array.size(sellList)) + "):\n"
+        for i = 0 to array.size(sellList) - 1
+            sellMsg += "• " + array.get(sellList, i)
+            if i < array.size(sellList) - 1
+                sellMsg += "\n"
+        
+        watchSellChatId = str.length(ema_watch_sell_chat_id) > 0 ? ema_watch_sell_chat_id : ema_sell_chat_id
+        send_msg(watchSellChatId, sellMsg)
+    
+    ema_watch_lastScanTime := time
+
+// Alert conditions for EMA Cross
+alertcondition(ema_buy_signal, title="EMA CROSS BUY (1H+15m)", message="EMA CROSS BUY")
+alertcondition(ema_sell_signal, title="EMA CROSS SELL (1H+15m)", message="EMA CROSS SELL")
+
 // =====================================================================
 // ===================== 4) SUPERDIP - DAILY DIP TARAMA =================
 // SuperDip v6_1 entegrasyonu - Günlük veri ile dip taraması
