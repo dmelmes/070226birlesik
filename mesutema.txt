@@ -1,0 +1,284 @@
+//@version=5
+indicator("Mesut  EMA Cross (5 vs 137) • 15m + 1H(15m Confirm) + 4H • Telegram • Multi-Scan", overlay=true, max_labels_count=500, dynamic_requests=true)
+
+// ========== Inputs ==========
+grpCore = "Core"
+lenFast  = input.int(5,   "EMA Fast", minval=1, group=grpCore)
+lenSlow  = input.int(137, "EMA Slow", minval=2, group=grpCore)
+showChartMAs = input.bool(true, "Plot chart EMAs (visual)", group=grpCore)
+
+grpTF = "Timeframes"
+enable15m = input.bool(true,  "15m tarama", group=grpTF)
+enable1h  = input.bool(true,  "1H tarama (15m onaylı)",  group=grpTF)
+enable4h  = input.bool(true,  "4H tarama",  group=grpTF)
+
+singleSymbolAlerts = input.bool(true, "Grafik sembolü için de alarm gönder", group=grpTF)
+
+// 1H -> 15m confirm settings
+confirm15mFor1h = input.bool(true, "1H sinyali için 15m onayı zorunlu", group=grpTF)
+confirm15mLookbackBars = input.int(3, "15m onay bakış (bar)", minval=0, maxval=20, group=grpTF, tooltip="3 = son 4 adet 15m barı (1 saat)")
+
+grpTG = "Telegram / Alert"
+useJsonTelegram   = input.bool(true,  "JSON (Telegram Webhook) kullan", group=grpTG, tooltip="TradingView alert Webhook URL: https://api.telegram.org/bot<TOKEN>/sendMessage")
+telegramChatId    = input.string("-4779006728", "Default chat_id", group=grpTG)
+telegramChatIdBuy = input.string("-4779006728", "BUY chat_id (opsiyonel)", group=grpTG)
+telegramChatIdSell= input.string("-4779006728", "SELL chat_id (opsiyonel)", group=grpTG)
+
+grpMS = "Multi-Scan (Sembol Listesi)"
+ms_enable   = input.bool(true, "Multi-Scan’i etkinleştir", group=grpMS)
+ms_prefix   = input.string("BIST:", "Piyasa ön eki (örn. BIST:)", group=grpMS)
+ms_exclude_chart_symbol = input.bool(true, "Grafik sembolünü hariç tut", group=grpMS)
+// Referansa uygun varsayılan liste (virgül veya satır sonu ile ayır)
+ms_symbols_input = input.string("BTCIM,HDFGS,CWENE,AKGRT,BULGS,LYDHO,ERCB,ANSGR,INFO,PATEK,ALFAS,BEGYO,ANELE,HUNER,DOFER,TEKTU", "Semboller", group=grpMS)
+
+// ========== Helpers ==========
+fEscape(strIn) =>
+    s = strIn
+    s := str.replace_all(s, "\\", "\\\\")
+    s := str.replace_all(s, "\"", "\\\"")
+    s := str.replace_all(s, "\n", "\\n")
+    s := str.replace_all(s, "\r", "")
+    s
+
+fChatId(isBuy) =>
+    def  = telegramChatId
+    buy  = telegramChatIdBuy  != "" ? telegramChatIdBuy  : def
+    sell = telegramChatIdSell != "" ? telegramChatIdSell : def
+    isBuy ? buy : sell
+
+cleanList(s)=> str.replace_all(str.replace_all(str.replace_all(s, "\r", ","), "\n", ","), " ", "")
+ms_build(symNoPrefix)=> (str.length(symNoPrefix) == 0) ? "" : (str.contains(symNoPrefix, ":") ? symNoPrefix : (ms_prefix + symNoPrefix))
+
+// Sembol listesi (ilk barda hazırla)
+var array<string> ms_symbols = array.new_string()
+if barstate.isfirst
+    raw = cleanList(ms_symbols_input)
+    parts = str.split(raw, ",")
+    for i = 0 to array.size(parts)-1
+        s = str.upper(array.get(parts,i))
+        if str.length(s) > 0
+            full = ms_build(s)
+            // sadece tickerid ile karşılaştırmak daha sağlıklı
+            ok = not ms_exclude_chart_symbol or (full != syminfo.tickerid)
+            if ok
+                array.push(ms_symbols, full)
+    // Güvenli sınır
+    while array.size(ms_symbols) > 40
+        array.pop(ms_symbols)
+
+// Cross evaluator (EMA version)
+f_cross_eval(_lenFast, _lenSlow) =>
+    sF  = ta.ema(close,  _lenFast)
+    sS  = ta.ema(close,  _lenSlow)
+    buy = ta.crossover(sF, sS)
+    sell= ta.crossunder(sF, sS)
+    [buy, sell, sF, sS]
+
+// "Son X bar içinde cross oldu mu?" evaluator (EMA)
+f_recent_cross(_lenFast, _lenSlow, lookbackBars, isBuy) =>
+    sF  = ta.ema(close,  _lenFast)
+    sS  = ta.ema(close,  _lenSlow)
+    c = isBuy ? ta.crossover(sF, sS) : ta.crossunder(sF, sS)
+    ta.barssince(c) <= lookbackBars
+
+// Tek mesaj kurucu
+f_build_msg(tfName, isBuy, price, t, sF, sS, extra) =>
+    dir   = isBuy ? "AL" : "SAT"
+    rule  = "EMA(" + str.tostring(lenFast) + ") " + (isBuy ? "üstüne kesti" : "altına kesti") + " EMA(" + str.tostring(lenSlow) + ")"
+    line1 = "EMA Cross — " + syminfo.ticker + " [" + tfName + "] — " + dir
+    line2 = "Kural: " + rule
+    line3 = "Fiyat: " + str.tostring(price, format.mintick)
+    line4 = "EMA" + str.tostring(lenFast) + ": " + str.tostring(sF, format.mintick) + " | EMA" + str.tostring(lenSlow) + ": " + str.tostring(sS, format.mintick)
+    line5 = "Zaman: " + str.format("{0,date,yyyy-MM-dd} {0,time,HH:mm}", t)
+    extraLine = str.length(extra) > 0 ? ("\n" + extra) : ""
+    line1 + "\n" + line2 + "\n" + line3 + "\n" + line4 + "\n" + line5 + extraLine
+
+// ========== Chart visuals (current chart TF) ==========
+s5c   = ta.ema(close, lenFast)
+s137c = ta.ema(close, lenSlow)
+plot(showChartMAs ? s5c   : na, title="EMA Fast", color=color.new(color.green, 0),  linewidth=2)
+plot(showChartMAs ? s137c : na, title="EMA Slow", color=color.new(color.orange, 0), linewidth=2)
+plotshape(ta.crossover(s5c, s137c), title="ChartTF Buy",  style=shape.triangleup,   color=color.new(color.green, 0), location=location.belowbar, size=size.tiny, text="AL")
+plotshape(ta.crossunder(s5c, s137c),title="ChartTF Sell", style=shape.triangledown, color=color.new(color.red, 0),   location=location.abovebar, size=size.tiny, text="SAT")
+
+// ========== MTF kaynakları (grafik sembolü) ==========
+// 15m
+[buy15_raw, sell15_raw, s5_15, s137_15] = request.security(syminfo.tickerid, "15", f_cross_eval(lenFast, lenSlow), barmerge.gaps_off, barmerge.lookahead_off)
+tf15Closed = request.security(syminfo.tickerid, "15", barstate.isconfirmed,       barmerge.gaps_off, barmerge.lookahead_off)
+t15        = request.security(syminfo.tickerid, "15", time,                        barmerge.gaps_off, barmerge.lookahead_off)
+c15        = request.security(syminfo.tickerid, "15", close,                       barmerge.gaps_off, barmerge.lookahead_off)
+
+// 1H
+[buy1h_raw, sell1h_raw, s5_1h, s137_1h] = request.security(syminfo.tickerid, "60", f_cross_eval(lenFast, lenSlow), barmerge.gaps_off, barmerge.lookahead_off)
+tf1hClosed = request.security(syminfo.tickerid, "60", barstate.isconfirmed,        barmerge.gaps_off, barmerge.lookahead_off)
+t1h        = request.security(syminfo.tickerid, "60", time,                        barmerge.gaps_off, barmerge.lookahead_off)
+c1h        = request.security(syminfo.tickerid, "60", close,                       barmerge.gaps_off, barmerge.lookahead_off)
+
+// 1H için 15m "son 1 saat içinde cross oldu mu?" onayı
+buy15_recent  = request.security(syminfo.tickerid, "15", f_recent_cross(lenFast, lenSlow, confirm15mLookbackBars, true),  barmerge.gaps_off, barmerge.lookahead_off)
+sell15_recent = request.security(syminfo.tickerid, "15", f_recent_cross(lenFast, lenSlow, confirm15mLookbackBars, false), barmerge.gaps_off, barmerge.lookahead_off)
+
+// 4H
+[buy4h_raw, sell4h_raw, s5_4h, s137_4h] = request.security(syminfo.tickerid, "240", f_cross_eval(lenFast, lenSlow), barmerge.gaps_off, barmerge.lookahead_off)
+tf4hClosed = request.security(syminfo.tickerid, "240", barstate.isconfirmed,        barmerge.gaps_off, barmerge.lookahead_off)
+t4h        = request.security(syminfo.tickerid, "240", time,                        barmerge.gaps_off, barmerge.lookahead_off)
+c4h        = request.security(syminfo.tickerid, "240", close,                       barmerge.gaps_off, barmerge.lookahead_off)
+
+// ========== Tek sembol (grafik) bildirimleri ==========
+var int lastSent15_single = na
+var int lastSent1h_single = na
+var int lastSent4h_single = na
+
+// 15m (ayrı çalışır - istersen kapatabilirsin)
+if singleSymbolAlerts and enable15m and tf15Closed and (buy15_raw or sell15_raw)
+    if na(lastSent15_single) or t15 != lastSent15_single
+        isBuy = buy15_raw
+        msg   = f_build_msg("15m", isBuy, c15, t15, s5_15, s137_15, "")
+        if useJsonTelegram
+            chat = fChatId(isBuy)
+            alert("{\"chat_id\":\"" + chat + "\",\"text\":\"" + fEscape(msg) + "\"}", alert.freq_once_per_bar_close)
+        else
+            alert(msg, alert.freq_once_per_bar_close)
+        lastSent15_single := t15
+
+// 1H (15m onaylı)
+buy1h_ok  = buy1h_raw  and (not confirm15mFor1h or buy15_recent)
+sell1h_ok = sell1h_raw and (not confirm15mFor1h or sell15_recent)
+
+if singleSymbolAlerts and enable1h and tf1hClosed and (buy1h_ok or sell1h_ok)
+    if na(lastSent1h_single) or t1h != lastSent1h_single
+        isBuy = buy1h_ok
+        extra = confirm15mFor1h ? ("Onay: 15m (son " + str.tostring(confirm15mLookbackBars + 1) + " bar içinde) kesişimi VAR") : ""
+        msg   = f_build_msg("1H", isBuy, c1h, t1h, s5_1h, s137_1h, extra)
+        if useJsonTelegram
+            chat = fChatId(isBuy)
+            alert("{\"chat_id\":\"" + chat + "\",\"text\":\"" + fEscape(msg) + "\"}", alert.freq_once_per_bar_close)
+        else
+            alert(msg, alert.freq_once_per_bar_close)
+        lastSent1h_single := t1h
+
+// 4H (ayrı çalışır)
+if singleSymbolAlerts and enable4h and tf4hClosed and (buy4h_raw or sell4h_raw)
+    if na(lastSent4h_single) or t4h != lastSent4h_single
+        isBuy = buy4h_raw
+        msg   = f_build_msg("4H", isBuy, c4h, t4h, s5_4h, s137_4h, "")
+        if useJsonTelegram
+            chat = fChatId(isBuy)
+            alert("{\"chat_id\":\"" + chat + "\",\"text\":\"" + fEscape(msg) + "\"}", alert.freq_once_per_bar_close)
+        else
+            alert(msg, alert.freq_once_per_bar_close)
+        lastSent4h_single := t4h
+
+// ========== Multi-Scan (liste) ==========
+// Not: Liste taramalarını, grafikteki ilgili TF kapanışında tetikliyoruz.
+// Daha gelişmiş (her sembol kendi confirmed'ıyla) yapmak mümkün; ama performans/maliyet artar.
+
+sendMs_15m(tfName, tfStr, isClose) =>
+    if ms_enable and isClose
+        buyLines  = ""
+        sellLines = ""
+        for i = 0 to array.size(ms_symbols)-1
+            sym = array.get(ms_symbols, i)
+            if str.length(sym) > 0
+                [b, s, _, _] = request.security(sym, tfStr, f_cross_eval(lenFast, lenSlow), barmerge.gaps_off, barmerge.lookahead_off)
+                if b
+                    buyLines  += "• " + sym + "\n"
+                if s
+                    sellLines += "• " + sym + "\n"
+        if str.length(buyLines) > 0
+            txtB = "EMA Cross AL (" + tfName + ")\n" + buyLines
+            if useJsonTelegram
+                alert("{\"chat_id\":\"" + fChatId(true) + "\",\"text\":\"" + fEscape(txtB) + "\"}", alert.freq_once_per_bar_close)
+            else
+                alert(txtB, alert.freq_once_per_bar_close)
+        if str.length(sellLines) > 0
+            txtS = "EMA Cross SAT (" + tfName + ")\n" + sellLines
+            if useJsonTelegram
+                alert("{\"chat_id\":\"" + fChatId(false) + "\",\"text\":\"" + fEscape(txtS) + "\"}", alert.freq_once_per_bar_close)
+            else
+                alert(txtS, alert.freq_once_per_bar_close)
+
+// 1H listesi: 1H cross + 15m onay (son 1 saat / son N bar)
+sendMs_1h_with15mConfirm(isClose) =>
+    if ms_enable and isClose and enable1h
+        buyLines  = ""
+        sellLines = ""
+        for i = 0 to array.size(ms_symbols)-1
+            sym = array.get(ms_symbols, i)
+            if str.length(sym) > 0
+                [b1, s1, _, _] = request.security(sym, "60", f_cross_eval(lenFast, lenSlow), barmerge.gaps_off, barmerge.lookahead_off)
+
+                // 15m onay: son confirm15mLookbackBars+1 bar içinde aynı yönde cross
+                b15c = request.security(sym, "15", f_recent_cross(lenFast, lenSlow, confirm15mLookbackBars, true),  barmerge.gaps_off, barmerge.lookahead_off)
+                s15c = request.security(sym, "15", f_recent_cross(lenFast, lenSlow, confirm15mLookbackBars, false), barmerge.gaps_off, barmerge.lookahead_off)
+
+                buyOk  = b1 and (not confirm15mFor1h or b15c)
+                sellOk = s1 and (not confirm15mFor1h or s15c)
+
+                if buyOk
+                    buyLines  += "• " + sym + "\n"
+                if sellOk
+                    sellLines += "• " + sym + "\n"
+
+        if str.length(buyLines) > 0
+            txtB = "EMA Cross AL (1H, 15m onaylı)\n" + buyLines
+            if useJsonTelegram
+                alert("{\"chat_id\":\"" + fChatId(true) + "\",\"text\":\"" + fEscape(txtB) + "\"}", alert.freq_once_per_bar_close)
+            else
+                alert(txtB, alert.freq_once_per_bar_close)
+
+        if str.length(sellLines) > 0
+            txtS = "EMA Cross SAT (1H, 15m onaylı)\n" + sellLines
+            if useJsonTelegram
+                alert("{\"chat_id\":\"" + fChatId(false) + "\",\"text\":\"" + fEscape(txtS) + "\"}", alert.freq_once_per_bar_close)
+            else
+                alert(txtS, alert.freq_once_per_bar_close)
+
+// 4H listesi: ayrı, sadece 4H cross
+sendMs_4h(isClose) =>
+    if ms_enable and isClose and enable4h
+        buyLines  = ""
+        sellLines = ""
+        for i = 0 to array.size(ms_symbols)-1
+            sym = array.get(ms_symbols, i)
+            if str.length(sym) > 0
+                [b, s, _, _] = request.security(sym, "240", f_cross_eval(lenFast, lenSlow), barmerge.gaps_off, barmerge.lookahead_off)
+                if b
+                    buyLines  += "• " + sym + "\n"
+                if s
+                    sellLines += "• " + sym + "\n"
+        if str.length(buyLines) > 0
+            txtB = "EMA Cross AL (4H)\n" + buyLines
+            if useJsonTelegram
+                alert("{\"chat_id\":\"" + fChatId(true) + "\",\"text\":\"" + fEscape(txtB) + "\"}", alert.freq_once_per_bar_close)
+            else
+                alert(txtB, alert.freq_once_per_bar_close)
+        if str.length(sellLines) > 0
+            txtS = "EMA Cross SAT (4H)\n" + sellLines
+            if useJsonTelegram
+                alert("{\"chat_id\":\"" + fChatId(false) + "\",\"text\":\"" + fEscape(txtS) + "\"}", alert.freq_once_per_bar_close)
+            else
+                alert(txtS, alert.freq_once_per_bar_close)
+
+// ========== Multi-Scan tetikleri ==========
+// 15m istersen ayrı liste taraması (enable15m açıkken)
+if enable15m
+    sendMs_15m("15m", "15", tf15Closed)
+
+// 1H: 15m onaylı liste taraması
+if enable1h
+    sendMs_1h_with15mConfirm(tf1hClosed)
+
+// 4H: ayrı liste taraması
+if enable4h
+    sendMs_4h(tf4hClosed)
+
+// ========== Alert conditions (manuel kurulum için opsiyonel) ==========
+alertcondition(enable15m and tf15Closed and buy15_raw,  title="15m EMA5 crosses ABOVE EMA137")
+alertcondition(enable15m and tf15Closed and sell15_raw, title="15m EMA5 crosses BELOW EMA137")
+
+alertcondition(enable1h and tf1hClosed and buy1h_ok,  title="1H EMA5 crosses ABOVE EMA137 (15m confirm)")
+alertcondition(enable1h and tf1hClosed and sell1h_ok, title="1H EMA5 crosses BELOW EMA137 (15m confirm)")
+
+alertcondition(enable4h and tf4hClosed and buy4h_raw,  title="4H EMA5 crosses ABOVE EMA137")
+alertcondition(enable4h and tf4hClosed and sell4h_raw, title="4H EMA5 crosses BELOW EMA137")
