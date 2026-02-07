@@ -36,7 +36,7 @@ satMinPullbackPct=input.float(5.0,"SAT: Min Düzeltme %",step=0.5,group=grpDipSa
 satMinHoldBars=input.int(5,"SAT: Min Hold Bar (DIP'ten sonra)",minval=0,group=grpDipSat,tooltip="DIP sinyalinden sonra minimum beklenecek bar sayısı")
 satRequireTrendWeakness=input.bool(false,"SAT: Trend Zayıflığı Şartı (opsiyonel)",group=grpDipSat,tooltip="Açıksa EMA zayıflığı veya momentum düşüşü gerektirir. Default kapalı.")
 enableDipAlert=input.bool(true,"Ana TF DIP Alarm Aktif",group=grpDipSat)
-enableSatAlert=input.bool(true,"Ana TF SAT Alarm Aktif",group=grpDipSat)
+enableSatAlert=input.bool(false,"Ana TF SAT Alarm Aktif",group=grpDipSat,tooltip="Varsayılan kapalı. Request.security limiti için. Gerekirse ayarlardan açabilirsiniz.")
 
 grpGate="Ana TF Gating / Spam"
 labelOncePerBreakout=input.bool(true,"Breakout başına tek DIP/SAT",group=grpGate)
@@ -153,9 +153,9 @@ ema_show_labels=input.bool(true,"EMA Label Göster",group=grpEMA)
 
 // EMA Watchlist Scan
 grpEMAWatch="EMA Watchlist Tarama"
-ema_watch_enable=input.bool(true,"Watchlist Tarama Aktif",group=grpEMAWatch)
+ema_watch_enable=input.bool(false,"Watchlist Tarama Aktif",group=grpEMAWatch,tooltip="Varsayılan kapalı. Request.security limiti için (max 40 çağrı). Gerekirse ayarlardan açabilirsiniz.")
 ema_watch_prefix=input.string("BIST:","Sembol Prefix",group=grpEMAWatch)
-ema_watch_symbols=input.string("THYAO,PETKM,SASA,SAHOL,AKBNK,EREGL,KCHOL,GARAN,ISCTR,VAKBN,TUPRS,TAVHL,SISE,TTKOM,KOZAL,KOZAA,FROTO,ASELS,ARCLK,EKGYO,YKBNK,HALKB,ENJSA,TCELL,PGSUS,BIMAS,ODAS,AEFES,MAVI,LOGO,MGROS,SOKM,BRISA,VESBE,VESTL,ANHYT,BUCIM,ENKAI,ALARK,DOAS","Sembol Listesi (virgülle ayrılmış, max 40)",group=grpEMAWatch,tooltip="Max 40 sembol. Örn: THYAO,PETKM,SASA")
+ema_watch_symbols=input.string("THYAO,PETKM,SASA,SAHOL,AKBNK,EREGL,KCHOL,GARAN,ISCTR,VAKBN","Sembol Listesi (virgülle ayrılmış, max 10-12)",group=grpEMAWatch,tooltip="TradingView limiti: 40 request.security çağrısı. Her sembol 3 çağrı yapar. Öneri: Max 10-12 sembol.")
 ema_watch_buy_chat_id=input.string("","Watchlist BUY chat_id (boşsa ana BUY chat_id kullanılır)",group=grpEMAWatch)
 ema_watch_sell_chat_id=input.string("","Watchlist SELL chat_id (boşsa ana SELL chat_id kullanılır)",group=grpEMAWatch)
 
