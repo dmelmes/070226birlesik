@@ -1858,17 +1858,17 @@ ema_sell_signal = ema_enable and ema_enable_sell and ema_1h_cross_down and ema_1
 // Build EMA message function
 f_ema_build_msg(isBuy) =>
     lines = array.new_string()
-    signalType = isBuy ? "BUY (AL)" : "SELL (SAT)"
-    array.push(lines, "⚡ EMA CROSS 1H • " + signalType)
+    signalType = isBuy ? "AL" : "SAT"
+    array.push(lines, "⚡ EMA KESİŞME 15 Dakika ve 1 Saat • " + signalType)
     array.push(lines, "HISSE: " + syminfo.ticker + " | FIYAT: " + fmtMintMsg(close))
     array.push(lines, "")
-    array.push(lines, "TETİK: 1H EMA" + str.tostring(ema_fast) + " " + (isBuy ? "yukarı kesti" : "aşağı kesti") + " EMA" + str.tostring(ema_slow))
-    array.push(lines, "ONAY: 15m EMA" + str.tostring(ema_fast) + " " + (isBuy ? ">" : "<") + " EMA" + str.tostring(ema_slow) + " (STATE)")
+    array.push(lines, "TETİK: 1 Saat EMA" + str.tostring(ema_fast) + " " + (isBuy ? "yukarı kesti" : "aşağı kesti") + " EMA" + str.tostring(ema_slow))
+    array.push(lines, "ONAY: 15 Dakika EMA" + str.tostring(ema_fast) + " " + (isBuy ? ">" : "<") + " EMA" + str.tostring(ema_slow))
     array.push(lines, "")
-    array.push(lines, "1H EMA" + str.tostring(ema_fast) + ": " + fmtMintMsg(ema1h_fast))
-    array.push(lines, "1H EMA" + str.tostring(ema_slow) + ": " + fmtMintMsg(ema1h_slow))
-    array.push(lines, "15m EMA" + str.tostring(ema_fast) + ": " + fmtMintMsg(ema15m_fast))
-    array.push(lines, "15m EMA" + str.tostring(ema_slow) + ": " + fmtMintMsg(ema15m_slow))
+    array.push(lines, "1 Saat EMA" + str.tostring(ema_fast) + ": " + fmtMintMsg(ema1h_fast))
+    array.push(lines, "1 Saat EMA" + str.tostring(ema_slow) + ": " + fmtMintMsg(ema1h_slow))
+    array.push(lines, "15 Dakika EMA" + str.tostring(ema_fast) + ": " + fmtMintMsg(ema15m_fast))
+    array.push(lines, "15 Dakika EMA" + str.tostring(ema_slow) + ": " + fmtMintMsg(ema15m_slow))
     f_lineJoin(lines)
 
 // Send alerts for single symbol
