@@ -1,0 +1,867 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TheUltimator5
+
+//@version=6
+indicator("Echo Chamber [theUltimator5]", overlay=true, max_bars_back = 5000, max_lines_count = 500, max_boxes_count = 500)
+
+// MODE SELECTION 
+operationMode = input.string("Manual Mode", title="Operation Mode", options=["Manual Mode", "Auto Mode"])
+
+// MANUAL MODE INPUTS 
+drawingMode = input.string("Scale Only", title="Drawing Mode", options=["Scale Only", "Rotate & Scale"])
+plotStyle = input.string("Lines", title="Plot Style", options=["Lines", "Candles"])
+userSelectedTime = operationMode == "Manual Mode" ? input.time(timestamp("2024-01-01 00:00"), title="Select Transition Point", confirm=true) : na
+
+// USER INPUTS
+correlationLength =     input.int(20,                 title="Correlation Window Length", minval=10)
+timeExpansionFactor =   input.int(1,                  title="Multiplication Factor", minval=1, tooltip="Multiplier for historical lookback. 2 = sample every 2nd bar, 3 = every 3rd bar, etc.")
+timeCompressionDivisor = input.int(1,                  title="Division Factor", minval=1, tooltip="Divisor applied after multiplication. Final length = (correlationLength — multiplier) · divisor, rounded down")
+lookbackPeriod =        input.int(300,                title="Lookback Range", minval=50)
+projectionLength =      input.int(20,                 title="Future Projection Length", minval=1)
+displayTable =          input.bool(true,              title="Show Correlation Match Table")
+tablePos =              input.string("bottom_right",     title="Table Position", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"])
+matchedLineColor =      input.color(color.rgb(100,200,250),   title="Best Fit Line Color")
+projectionLineColor =   input.color(color.rgb(255, 192, 203), title="Future Projection Color")
+lowCorrelationColor =   input.color(color.red,        title="Table Low Correlation Color")
+highCorrelationColor =  input.color(color.green,      title="Table High Correlation Color")
+
+// VARIABLES
+var float   highestCorrelation =    na
+var int     bestMatchOffset =       na
+var float[] matchedSegment =        array.new_float(correlationLength, 0.0)
+var float[] projectionSegment =     array.new_float(projectionLength, 0.0)
+var line[]  drawnLines =            array.new_line()
+var box[]   drawnBoxes =            array.new_box()
+var float   historicalBasePrice =   na
+var float   currentBasePrice =      na
+var float   priceScaleFactor =      na
+var box     matchHighlightBox =     na
+var box     projectionHighlightBox = na
+var table   correlationTable =      na
+
+// Arrays to store OHLC data for matched and projection segments
+var float[] matchedOpen =     array.new_float(correlationLength, 0.0)
+var float[] matchedHigh =     array.new_float(correlationLength, 0.0)
+var float[] matchedLow =      array.new_float(correlationLength, 0.0)
+var float[] matchedClose =    array.new_float(correlationLength, 0.0)
+
+var float[] projectionOpen =  array.new_float(projectionLength, 0.0)
+var float[] projectionHigh =  array.new_float(projectionLength, 0.0)
+var float[] projectionLow =   array.new_float(projectionLength, 0.0)
+var float[] projectionClose = array.new_float(projectionLength, 0.0)
+
+// Initialize correlation display table
+if na(correlationTable)
+    tablePosition = tablePos == "top_left" ? position.top_left : 
+                   tablePos == "top_center" ? position.top_center : 
+                   tablePos == "top_right" ? position.top_right : 
+                   tablePos == "middle_left" ? position.middle_left : 
+                   tablePos == "middle_center" ? position.middle_center : 
+                   tablePos == "middle_right" ? position.middle_right : 
+                   tablePos == "bottom_left" ? position.bottom_left : 
+                   tablePos == "bottom_center" ? position.bottom_center : 
+                   position.bottom_right
+    correlationTable := table.new(tablePosition, 1, 2, border_width = 1)
+
+// Calculate the effective sampling interval (how many bars between samples)
+samplingInterval = math.round((timeExpansionFactor * 1.0) / timeCompressionDivisor)
+samplingInterval := math.max(samplingInterval, 1) // Ensure at least 1
+
+historicalLength = correlationLength * samplingInterval
+// ENFORCE PROJECTION CONSTRAINT
+// Ensure lookback is large enough to contain compressed correlation window plus projection
+lookbackPeriod := math.max(lookbackPeriod, historicalLength + 1)
+
+// Calculate Pearson correlation coefficient between two arrays
+calcCorr(arrayA, arrayB, length) =>
+    float sumA = 0.0, sumB = 0.0
+    for i = 0 to length - 1
+        sumA += array.get(arrayA, i)
+        sumB += array.get(arrayB, i)
+    float meanA = sumA / length
+    float meanB = sumB / length
+
+    float numerator = 0.0, denominatorA = 0.0, denominatorB = 0.0
+    for i = 0 to length - 1
+        float deviationA = array.get(arrayA, i) - meanA
+        float deviationB = array.get(arrayB, i) - meanB
+        numerator += deviationA * deviationB
+        denominatorA += deviationA * deviationA
+        denominatorB += deviationB * deviationB
+    numerator / math.sqrt(denominatorA * denominatorB)
+
+// Find bar index offset for user-selected timestamp
+selectedBarOffset = 0
+
+if operationMode == "Manual Mode"
+    for i = 0 to 5000
+        if time[i] <= userSelectedTime
+            selectedBarOffset := i
+            break
+
+//=====================================================================
+// MANUAL MODE LOGIC
+// Copy price data from user-selected segment, sampling every Nth bar based on compression factor
+if operationMode == "Manual Mode" and bar_index >= selectedBarOffset + historicalLength
+    // Fill matched segment by sampling every Nth bar from historical data
+    for j = 0 to correlationLength - 1
+        barOffset = selectedBarOffset + (j * samplingInterval)
+        array.set(matchedSegment, j, close[barOffset])
+        array.set(matchedOpen, j, open[barOffset])
+        array.set(matchedHigh, j, high[barOffset])
+        array.set(matchedLow, j, low[barOffset])
+        array.set(matchedClose, j, close[barOffset])
+
+    // Fill projection segment by sampling every Nth bar after selected segment
+    if selectedBarOffset >= (projectionLength * samplingInterval) + 1
+        for j = 0 to projectionLength - 1
+            barOffset = selectedBarOffset - (j * samplingInterval) - 1
+            array.set(projectionSegment, j, close[barOffset])
+            array.set(projectionOpen, j, open[barOffset])
+            array.set(projectionHigh, j, high[barOffset])
+            array.set(projectionLow, j, low[barOffset])
+            array.set(projectionClose, j, close[barOffset])
+    
+    historicalBasePrice := close[selectedBarOffset + historicalLength - 1]
+    currentBasePrice := close[selectedBarOffset]
+    priceScaleFactor := 1.0
+    bestMatchOffset := selectedBarOffset
+    highestCorrelation := 1.0
+
+//=======================================================================
+// AUTO MODE LOGIC - SEARCH FOR BEST-MATCH SEGMENT
+// Search historical data for compressed segment most correlated with recent price action
+if operationMode == "Auto Mode" and bar_index >= lookbackPeriod
+    highestCorrelation := na
+    bestMatchOffset := na
+
+    // Loop through historical data to find best correlation match
+    for i = historicalLength to lookbackPeriod - historicalLength - (projectionLength * samplingInterval)
+        historicalPrices = array.new_float(correlationLength)
+        recentPrices = array.new_float(correlationLength)
+        futurePrices = array.new_float(projectionLength)
+    
+        // Fill arrays by sampling every Nth bar based on sampling interval
+        for j = 0 to correlationLength - 1
+            array.set(historicalPrices, j, close[i + (j * samplingInterval)])
+            array.set(recentPrices, j, close[j])
+    
+        // Fill future projection array with compressed sampling
+        if i >= (projectionLength * samplingInterval)
+            for j = 0 to projectionLength - 1
+                array.set(futurePrices, j, close[i - (j * samplingInterval) - 1])
+        else
+            // If not enough projection data available, skip this match
+            continue
+        
+        correlation = calcCorr(historicalPrices, recentPrices, correlationLength)
+        
+        // Update best match if this segment has higher correlation
+        if not na(correlation) and (na(highestCorrelation) or correlation > highestCorrelation)
+            highestCorrelation := correlation
+            bestMatchOffset := i
+            for j = 0 to correlationLength - 1
+                barOffset = i + (j * timeExpansionFactor)
+                array.set(matchedSegment, j, close[barOffset])
+                array.set(matchedOpen, j, open[barOffset])
+                array.set(matchedHigh, j, high[barOffset])
+                array.set(matchedLow, j, low[barOffset])
+                array.set(matchedClose, j, close[barOffset])
+            for j = 0 to projectionLength - 1
+                barOffset = i - (j * timeExpansionFactor)
+                array.set(projectionSegment, j, close[barOffset])
+                array.set(projectionOpen, j, open[barOffset])
+                array.set(projectionHigh, j, high[barOffset])
+                array.set(projectionLow, j, low[barOffset])
+                array.set(projectionClose, j, close[barOffset])
+            historicalBasePrice := close[i]
+            currentBasePrice := close[0]
+            priceScaleFactor := (array.max(matchedSegment)-array.min(matchedSegment)) / (ta.highest(close,correlationLength) - ta.lowest(close,correlationLength))
+
+//==================================================================
+// CLEAR OLD GRAPHICS
+// Remove previously drawn lines and boxes when recalculating
+shouldClearGraphics = false
+if operationMode == "Manual Mode"
+    shouldClearGraphics := bar_index > selectedBarOffset + historicalLength
+else if operationMode == "Auto Mode"
+    shouldClearGraphics := bar_index > lookbackPeriod
+
+if shouldClearGraphics
+    if array.size(drawnLines) > 0
+        for k = 0 to array.size(drawnLines) - 1
+            line.delete(array.get(drawnLines, k))
+        array.clear(drawnLines)
+    if array.size(drawnBoxes) > 0
+        for k = 0 to array.size(drawnBoxes) - 1
+            box.delete(array.get(drawnBoxes, k))
+        array.clear(drawnBoxes)
+
+//==================================================================
+// HELPER FUNCTION: Draw a single candle using lines and boxes
+drawCandle(barPos, o, h, l, c, candleColor) =>
+    bullish = c >= o
+    bodyTop = math.max(o, c)
+    bodyBottom = math.min(o, c)
+    
+    // Draw wick (high to low)
+    wickLine = line.new(barPos, h, barPos, l, color=candleColor, width=1)
+    array.push(drawnLines, wickLine)
+    
+    // Draw body as a box
+    bodyBox = box.new(barPos, bodyTop, barPos, bodyBottom, 
+                      border_color=candleColor, 
+                      bgcolor=bullish ? color.new(candleColor, 80) : candleColor,
+                      border_width=1)
+    array.push(drawnBoxes, bodyBox)
+
+//==================================================================
+// DRAW MATCHED SEGMENT
+// Transform and plot the best-matching historical segment onto current chart
+if array.size(matchedSegment) == correlationLength and not na(historicalBasePrice) and not na(currentBasePrice)
+    if operationMode == "Manual Mode"
+        // Calculate scale factor based on price ranges
+        recentHigh = ta.highest(close, correlationLength)
+        recentLow = ta.lowest(close, correlationLength)
+        recentRange = recentHigh - recentLow
+    
+        historicalHigh = array.max(matchedSegment)
+        historicalLow = array.min(matchedSegment)
+        historicalRange = historicalHigh - historicalLow
+    
+        rangeScale = historicalRange != 0 ? recentRange / historicalRange : 1.0
+        
+        if drawingMode == "Scale Only"
+            // Scale segment to match current range, anchored at bar 0
+            historicalAnchor = array.get(matchedSegment, 0)
+            currentAnchor = close[0]
+            
+            if plotStyle == "Lines"
+                for j = 0 to correlationLength - 2
+                    historicalPrice1 = array.get(matchedSegment, j)
+                    historicalPrice2 = array.get(matchedSegment, j + 1)
+                    
+                    // Transform: scale then shift to anchor at current price
+                    transformedPrice1 = currentAnchor + (historicalPrice1 - historicalAnchor) * rangeScale
+                    transformedPrice2 = currentAnchor + (historicalPrice2 - historicalAnchor) * rangeScale
+                    
+                    barPosition1 = bar_index - j
+                    barPosition2 = bar_index - (j + 1)
+                    
+                    lineSegment = line.new(barPosition1, transformedPrice1, barPosition2, transformedPrice2, color=matchedLineColor, width=2)
+                    array.push(drawnLines, lineSegment)
+            else // Candles
+                for j = 0 to correlationLength - 1
+                    o = array.get(matchedOpen, j)
+                    h = array.get(matchedHigh, j)
+                    l = array.get(matchedLow, j)
+                    c = array.get(matchedClose, j)
+                    
+                    // Transform OHLC
+                    transformedO = currentAnchor + (o - historicalAnchor) * rangeScale
+                    transformedH = currentAnchor + (h - historicalAnchor) * rangeScale
+                    transformedL = currentAnchor + (l - historicalAnchor) * rangeScale
+                    transformedC = currentAnchor + (c - historicalAnchor) * rangeScale
+                    
+                    barPosition = bar_index - j
+                    drawCandle(barPosition, transformedO, transformedH, transformedL, transformedC, matchedLineColor)
+        else
+            // Match both endpoints with rotation to fit current chart segment
+            historicalFirstPrice = array.get(matchedSegment, 0)
+            historicalLastPrice = array.get(matchedSegment, correlationLength - 1)
+            
+            currentFirstPrice = close[0]
+            currentLastPrice = close[correlationLength - 1]
+            
+            if plotStyle == "Lines"
+                for j = 0 to correlationLength - 2
+                    historicalPrice1 = array.get(matchedSegment, j)
+                    historicalPrice2 = array.get(matchedSegment, j + 1)
+                    
+                    // Apply range-based scaling
+                    scaledPrice1 = historicalFirstPrice + (historicalPrice1 - historicalFirstPrice) * rangeScale
+                    scaledPrice2 = historicalFirstPrice + (historicalPrice2 - historicalFirstPrice) * rangeScale
+                    
+                    // Calculate interpolation ratios for endpoint anchoring
+                    interpolationRatio1 = float(j) / float(correlationLength - 1)
+                    interpolationRatio2 = float(j + 1) / float(correlationLength - 1)
+                    
+                    // Calculate scaled endpoints
+                    scaledFirstPrice = historicalFirstPrice
+                    scaledLastPrice = historicalFirstPrice + (historicalLastPrice - historicalFirstPrice) * rangeScale
+                    
+                    // Blend with chart endpoints to create rotation effect
+                    transformedPrice1 = currentFirstPrice + (scaledPrice1 - scaledFirstPrice) + interpolationRatio1 * ((currentLastPrice - currentFirstPrice) - (scaledLastPrice - scaledFirstPrice))
+                    transformedPrice2 = currentFirstPrice + (scaledPrice2 - scaledFirstPrice) + interpolationRatio2 * ((currentLastPrice - currentFirstPrice) - (scaledLastPrice - scaledFirstPrice))
+                    
+                    barPosition1 = bar_index - j
+                    barPosition2 = bar_index - (j + 1)
+                    
+                    lineSegment = line.new(barPosition1, transformedPrice1, barPosition2, transformedPrice2, color=matchedLineColor, width=2)
+                    array.push(drawnLines, lineSegment)
+            else // Candles with rotation
+                for j = 0 to correlationLength - 1
+                    o = array.get(matchedOpen, j)
+                    h = array.get(matchedHigh, j)
+                    l = array.get(matchedLow, j)
+                    c = array.get(matchedClose, j)
+                    
+                    // Apply range-based scaling
+                    scaledO = historicalFirstPrice + (o - historicalFirstPrice) * rangeScale
+                    scaledH = historicalFirstPrice + (h - historicalFirstPrice) * rangeScale
+                    scaledL = historicalFirstPrice + (l - historicalFirstPrice) * rangeScale
+                    scaledC = historicalFirstPrice + (c - historicalFirstPrice) * rangeScale
+                    
+                    interpolationRatio = float(j) / float(correlationLength - 1)
+                    scaledFirstPrice = historicalFirstPrice
+                    scaledLastPrice = historicalFirstPrice + (historicalLastPrice - historicalFirstPrice) * rangeScale
+                    
+                    rotationShift = interpolationRatio * ((currentLastPrice - currentFirstPrice) - (scaledLastPrice - scaledFirstPrice))
+                    
+                    transformedO = currentFirstPrice + (scaledO - scaledFirstPrice) + rotationShift
+                    transformedH = currentFirstPrice + (scaledH - scaledFirstPrice) + rotationShift
+                    transformedL = currentFirstPrice + (scaledL - scaledFirstPrice) + rotationShift
+                    transformedC = currentFirstPrice + (scaledC - scaledFirstPrice) + rotationShift
+                    
+                    barPosition = bar_index - j
+                    drawCandle(barPosition, transformedO, transformedH, transformedL, transformedC, matchedLineColor)
+                
+    else if operationMode == "Auto Mode"
+        // Calculate scale factor based on price ranges
+        recentHigh = ta.highest(close, correlationLength)
+        recentLow = ta.lowest(close, correlationLength)
+        recentRange = recentHigh - recentLow
+    
+        historicalHigh = array.max(matchedSegment)
+        historicalLow = array.min(matchedSegment)
+        historicalRange = historicalHigh - historicalLow
+    
+        rangeScale = historicalRange != 0 ? recentRange / historicalRange : 1.0
+        
+        if drawingMode == "Scale Only"
+            // Scale to match ranges, centered at current price
+            historicalAnchor = array.get(matchedSegment, 0)
+            currentAnchor = close[0]
+            
+            if plotStyle == "Lines"
+                for j = 0 to correlationLength - 2
+                    historicalPrice1 = array.get(matchedSegment, j)
+                    historicalPrice2 = array.get(matchedSegment, j + 1)
+                    
+                    // Transform: scale then shift to match current price
+                    transformedPrice1 = currentAnchor + (historicalPrice1 - historicalAnchor) * rangeScale
+                    transformedPrice2 = currentAnchor + (historicalPrice2 - historicalAnchor) * rangeScale
+                    
+                    barPosition1 = bar_index - j
+                    barPosition2 = bar_index - (j + 1)
+                    
+                    lineSegment = line.new(barPosition1, transformedPrice1, barPosition2, transformedPrice2, color=matchedLineColor, width=2)
+                    array.push(drawnLines, lineSegment)
+            else // Candles
+                for j = 0 to correlationLength - 1
+                    o = array.get(matchedOpen, j)
+                    h = array.get(matchedHigh, j)
+                    l = array.get(matchedLow, j)
+                    c = array.get(matchedClose, j)
+                    
+                    // Transform OHLC
+                    transformedO = currentAnchor + (o - historicalAnchor) * rangeScale
+                    transformedH = currentAnchor + (h - historicalAnchor) * rangeScale
+                    transformedL = currentAnchor + (l - historicalAnchor) * rangeScale
+                    transformedC = currentAnchor + (c - historicalAnchor) * rangeScale
+                    
+                    barPosition = bar_index - j
+                    drawCandle(barPosition, transformedO, transformedH, transformedL, transformedC, matchedLineColor)
+        else
+            // Match first & last points with range-based scaling
+            historicalFirstPrice = array.get(matchedSegment, 0)
+            historicalLastPrice = array.get(matchedSegment, correlationLength - 1)
+            
+            currentFirstPrice = close[0]
+            currentLastPrice = close[correlationLength - 1]
+            
+            if plotStyle == "Lines"
+                for j = 0 to correlationLength - 2
+                    historicalPrice1 = array.get(matchedSegment, j)
+                    historicalPrice2 = array.get(matchedSegment, j + 1)
+                    
+                    // Apply range-based scaling
+                    scaledPrice1 = historicalFirstPrice + (historicalPrice1 - historicalFirstPrice) * rangeScale
+                    scaledPrice2 = historicalFirstPrice + (historicalPrice2 - historicalFirstPrice) * rangeScale
+                    
+                    // Calculate interpolation ratios for endpoint anchoring
+                    interpolationRatio1 = float(j) / float(correlationLength - 1)
+                    interpolationRatio2 = float(j + 1) / float(correlationLength - 1)
+                    
+                    // Calculate scaled endpoints
+                    scaledFirstPrice = historicalFirstPrice
+                    scaledLastPrice = historicalFirstPrice + (historicalLastPrice - historicalFirstPrice) * rangeScale
+                    
+                    // Blend with chart endpoints to create rotation effect
+                    transformedPrice1 = currentFirstPrice + (scaledPrice1 - scaledFirstPrice) + interpolationRatio1 * ((currentLastPrice - currentFirstPrice) - (scaledLastPrice - scaledFirstPrice))
+                    transformedPrice2 = currentFirstPrice + (scaledPrice2 - scaledFirstPrice) + interpolationRatio2 * ((currentLastPrice - currentFirstPrice) - (scaledLastPrice - scaledFirstPrice))
+                    
+                    barPosition1 = bar_index - j
+                    barPosition2 = bar_index - (j + 1)
+                    
+                    lineSegment = line.new(barPosition1, transformedPrice1, barPosition2, transformedPrice2, color=matchedLineColor, width=2)
+                    array.push(drawnLines, lineSegment)
+            else // Candles with rotation
+                for j = 0 to correlationLength - 1
+                    o = array.get(matchedOpen, j)
+                    h = array.get(matchedHigh, j)
+                    l = array.get(matchedLow, j)
+                    c = array.get(matchedClose, j)
+                    
+                    // Apply range-based scaling
+                    scaledO = historicalFirstPrice + (o - historicalFirstPrice) * rangeScale
+                    scaledH = historicalFirstPrice + (h - historicalFirstPrice) * rangeScale
+                    scaledL = historicalFirstPrice + (l - historicalFirstPrice) * rangeScale
+                    scaledC = historicalFirstPrice + (c - historicalFirstPrice) * rangeScale
+                    
+                    interpolationRatio = float(j) / float(correlationLength - 1)
+                    scaledFirstPrice = historicalFirstPrice
+                    scaledLastPrice = historicalFirstPrice + (historicalLastPrice - historicalFirstPrice) * rangeScale
+                    
+                    rotationShift = interpolationRatio * ((currentLastPrice - currentFirstPrice) - (scaledLastPrice - scaledFirstPrice))
+                    
+                    transformedO = currentFirstPrice + (scaledO - scaledFirstPrice) + rotationShift
+                    transformedH = currentFirstPrice + (scaledH - scaledFirstPrice) + rotationShift
+                    transformedL = currentFirstPrice + (scaledL - scaledFirstPrice) + rotationShift
+                    transformedC = currentFirstPrice + (scaledC - scaledFirstPrice) + rotationShift
+                    
+                    barPosition = bar_index - j
+                    drawCandle(barPosition, transformedO, transformedH, transformedL, transformedC, matchedLineColor)
+
+//==================================================================
+// DRAW FUTURE PROJECTION
+// Plot what happened after the historical match as a projection forward
+projectionAnchor = array.get(projectionSegment, 0)
+if array.size(projectionSegment) == projectionLength and not na(projectionAnchor) and not na(currentBasePrice)
+    if operationMode == "Manual Mode"
+        recentHigh = ta.highest(close, correlationLength)
+        recentLow = ta.lowest(close, correlationLength)
+        recentRange = recentHigh - recentLow
+    
+        historicalHigh = array.max(matchedSegment)
+        historicalLow = array.min(matchedSegment)
+        historicalRange = historicalHigh - historicalLow
+    
+        rangeScale = historicalRange != 0 ? recentRange / historicalRange : 1.0
+        
+        if drawingMode == "Scale Only"
+            projectionFirstPrice = array.get(projectionSegment, 0)
+            bar0Price = close[0]
+            
+            if plotStyle == "Lines"
+                for j = 0 to projectionLength - 2
+                    projectionPrice1 = array.get(projectionSegment, j)
+                    projectionPrice2 = array.get(projectionSegment, j + 1)
+                    
+                    transformedPrice1 = bar0Price + (projectionPrice1 - projectionFirstPrice) * rangeScale
+                    transformedPrice2 = bar0Price + (projectionPrice2 - projectionFirstPrice) * rangeScale
+                    
+                    barPosition1 = bar_index + j + 1
+                    barPosition2 = bar_index + j + 2
+                    
+                    projectionLine = line.new(barPosition1, transformedPrice1, barPosition2, transformedPrice2, color=projectionLineColor, style=line.style_dotted, width=2)
+                    array.push(drawnLines, projectionLine)
+            else // Candles
+                for j = 0 to projectionLength - 1
+                    o = array.get(projectionOpen, j)
+                    h = array.get(projectionHigh, j)
+                    l = array.get(projectionLow, j)
+                    c = array.get(projectionClose, j)
+                    
+                    transformedO = bar0Price + (o - projectionFirstPrice) * rangeScale
+                    transformedH = bar0Price + (h - projectionFirstPrice) * rangeScale
+                    transformedL = bar0Price + (l - projectionFirstPrice) * rangeScale
+                    transformedC = bar0Price + (c - projectionFirstPrice) * rangeScale
+                    
+                    barPosition = bar_index + j + 1
+                    drawCandle(barPosition, transformedO, transformedH, transformedL, transformedC, projectionLineColor)
+        else
+            // Apply same rotation angle as matched segment
+            projectionFirstPrice = array.get(projectionSegment, 0)
+            projectionLastPrice = array.get(projectionSegment, projectionLength - 1)
+            currentFirstPrice = close[0]
+            currentLastPrice = close[correlationLength - 1]
+            historicalFirstPrice = array.get(matchedSegment, 0)
+            historicalLastPrice = array.get(matchedSegment, correlationLength - 1)
+            historicalHigh = array.max(matchedSegment)
+            historicalLow = array.min(matchedSegment)
+            historicalRange = historicalHigh - historicalLow
+            recentHigh = ta.highest(close, correlationLength)[selectedBarOffset]
+            recentLow = ta.lowest(close, correlationLength)[selectedBarOffset]
+            recentRange = recentHigh - recentLow
+            rangeScale = historicalRange != 0 ? recentRange / historicalRange : 1.0
+            scaledFirstPrice = historicalFirstPrice
+            scaledLastPrice = historicalFirstPrice + (historicalLastPrice - historicalFirstPrice) * rangeScale
+            matchedRotationShift = (currentLastPrice - currentFirstPrice) - (scaledLastPrice - scaledFirstPrice)
+            projectionStartPrice = close[0]
+            scaledProjectionLast = projectionFirstPrice + (projectionLastPrice - projectionFirstPrice) * rangeScale
+            
+            projectionRotationShift = matchedRotationShift * float(projectionLength - 1) / float(correlationLength - 1)
+            
+            projectionEndPrice = projectionStartPrice + (scaledProjectionLast - projectionFirstPrice) + projectionRotationShift
+            
+            if plotStyle == "Lines"
+                for j = 0 to projectionLength - 2
+                    projectionPrice1 = array.get(projectionSegment, j)
+                    projectionPrice2 = array.get(projectionSegment, j + 1)
+                    scaledPrice1 = projectionFirstPrice + (projectionPrice1 - projectionFirstPrice) * rangeScale
+                    scaledPrice2 = projectionFirstPrice + (projectionPrice2 - projectionFirstPrice) * rangeScale
+                    
+                    interpolationRatio1 = float(j) / float(projectionLength - 1)
+                    interpolationRatio2 = float(j + 1) / float(projectionLength - 1)
+                    
+                    transformedPrice1 = projectionStartPrice + (scaledPrice1 - projectionFirstPrice) + interpolationRatio1 * projectionRotationShift
+                    transformedPrice2 = projectionStartPrice + (scaledPrice2 - projectionFirstPrice) + interpolationRatio2 * projectionRotationShift
+                    
+                    barPosition1 = bar_index + j + 1
+                    barPosition2 = bar_index + j + 2
+                    
+                    projectionLine = line.new(barPosition1, transformedPrice1, barPosition2, transformedPrice2, color=projectionLineColor, style=line.style_dotted, width=2)
+                    array.push(drawnLines, projectionLine)
+            else // Candles with rotation
+                for j = 0 to projectionLength - 1
+                    o = array.get(projectionOpen, j)
+                    h = array.get(projectionHigh, j)
+                    l = array.get(projectionLow, j)
+                    c = array.get(projectionClose, j)
+                    
+                    scaledO = projectionFirstPrice + (o - projectionFirstPrice) * rangeScale
+                    scaledH = projectionFirstPrice + (h - projectionFirstPrice) * rangeScale
+                    scaledL = projectionFirstPrice + (l - projectionFirstPrice) * rangeScale
+                    scaledC = projectionFirstPrice + (c - projectionFirstPrice) * rangeScale
+                    
+                    interpolationRatio = float(j) / float(projectionLength - 1)
+                    
+                    transformedO = projectionStartPrice + (scaledO - projectionFirstPrice) + interpolationRatio * projectionRotationShift
+                    transformedH = projectionStartPrice + (scaledH - projectionFirstPrice) + interpolationRatio * projectionRotationShift
+                    transformedL = projectionStartPrice + (scaledL - projectionFirstPrice) + interpolationRatio * projectionRotationShift
+                    transformedC = projectionStartPrice + (scaledC - projectionFirstPrice) + interpolationRatio * projectionRotationShift
+                    
+                    barPosition = bar_index + j + 1
+                    drawCandle(barPosition, transformedO, transformedH, transformedL, transformedC, projectionLineColor)
+                
+    else if operationMode == "Auto Mode"
+        matchedEndPrice = close[0]
+        historicalHigh = array.max(matchedSegment)
+        historicalLow = array.min(matchedSegment)
+        historicalRange = historicalHigh - historicalLow
+        recentHigh = ta.highest(close, correlationLength)
+        recentLow = ta.lowest(close, correlationLength)
+        recentRange = recentHigh - recentLow
+        rangeScale = historicalRange != 0 ? recentRange / historicalRange : 1.0
+        
+        if drawingMode == "Scale Only"
+            projectionFirstPrice = array.get(projectionSegment, 0)
+            
+            if plotStyle == "Lines"
+                for j = 0 to projectionLength - 2
+                    projectionPrice1 = array.get(projectionSegment, j)
+                    projectionPrice2 = array.get(projectionSegment, j + 1)
+                    transformedPrice1 = matchedEndPrice + (projectionPrice1 - projectionFirstPrice) * rangeScale
+                    transformedPrice2 = matchedEndPrice + (projectionPrice2 - projectionFirstPrice) * rangeScale
+                    
+                    barPosition1 = bar_index + j + 1
+                    barPosition2 = bar_index + j + 2
+                    
+                    projectionLine = line.new(barPosition1, transformedPrice1, barPosition2, transformedPrice2, color=projectionLineColor, style=line.style_dotted, width=2)
+                    array.push(drawnLines, projectionLine)
+            else // Candles
+                for j = 0 to projectionLength - 1
+                    o = array.get(projectionOpen, j)
+                    h = array.get(projectionHigh, j)
+                    l = array.get(projectionLow, j)
+                    c = array.get(projectionClose, j)
+                    
+                    transformedO = matchedEndPrice + (o - projectionFirstPrice) * rangeScale
+                    transformedH = matchedEndPrice + (h - projectionFirstPrice) * rangeScale
+                    transformedL = matchedEndPrice + (l - projectionFirstPrice) * rangeScale
+                    transformedC = matchedEndPrice + (c - projectionFirstPrice) * rangeScale
+                    
+                    barPosition = bar_index + j + 1
+                    drawCandle(barPosition, transformedO, transformedH, transformedL, transformedC, projectionLineColor)
+        else
+            // Apply same rotation and scale as matched segment
+            projectionFirstPrice = array.get(projectionSegment, 0)
+            projectionLastPrice = array.get(projectionSegment, projectionLength - 1)
+            
+            currentFirstPrice = close[0]
+            currentLastPrice = close[correlationLength - 1]
+            
+            historicalFirstPrice = array.get(matchedSegment, 0)
+            historicalLastPrice = array.get(matchedSegment, correlationLength - 1)
+            
+            scaledFirstPrice = historicalFirstPrice
+            scaledLastPrice = historicalFirstPrice + (historicalLastPrice - historicalFirstPrice) * rangeScale
+            
+            matchedRotationShift = (currentLastPrice - currentFirstPrice) - (scaledLastPrice - scaledFirstPrice)
+            
+            projectionStartPrice = matchedEndPrice
+            
+            scaledProjectionLast = projectionFirstPrice + (projectionLastPrice - projectionFirstPrice) * rangeScale
+            projectionRotationShift = matchedRotationShift * float(projectionLength - 1) / float(correlationLength - 1)
+            
+            projectionEndPrice = projectionStartPrice + (scaledProjectionLast - projectionFirstPrice) + projectionRotationShift
+            
+            if plotStyle == "Lines"
+                for j = 0 to projectionLength - 2
+                    projectionPrice1 = array.get(projectionSegment, j)
+                    projectionPrice2 = array.get(projectionSegment, j + 1)
+                    
+                    scaledPrice1 = projectionFirstPrice + (projectionPrice1 - projectionFirstPrice) * rangeScale
+                    scaledPrice2 = projectionFirstPrice + (projectionPrice2 - projectionFirstPrice) * rangeScale
+                    
+                    interpolationRatio1 = float(j) / float(projectionLength - 1)
+                    interpolationRatio2 = float(j + 1) / float(projectionLength - 1)
+                    
+                    transformedPrice1 = projectionStartPrice + (scaledPrice1 - projectionFirstPrice) + interpolationRatio1 * projectionRotationShift
+                    transformedPrice2 = projectionStartPrice + (scaledPrice2 - projectionFirstPrice) + interpolationRatio2 * projectionRotationShift
+                    
+                    barPosition1 = bar_index + j + 1
+                    barPosition2 = bar_index + j + 2
+                    
+                    projectionLine = line.new(barPosition1, transformedPrice1, barPosition2, transformedPrice2, color=projectionLineColor, style=line.style_dotted, width=2)
+                    array.push(drawnLines, projectionLine)
+            else // Candles with rotation
+                for j = 0 to projectionLength - 1
+                    o = array.get(projectionOpen, j)
+                    h = array.get(projectionHigh, j)
+                    l = array.get(projectionLow, j)
+                    c = array.get(projectionClose, j)
+                    
+                    scaledO = projectionFirstPrice + (o - projectionFirstPrice) * rangeScale
+                    scaledH = projectionFirstPrice + (h - projectionFirstPrice) * rangeScale
+                    scaledL = projectionFirstPrice + (l - projectionFirstPrice) * rangeScale
+                    scaledC = projectionFirstPrice + (c - projectionFirstPrice) * rangeScale
+                    
+                    interpolationRatio = float(j) / float(projectionLength - 1)
+                    
+                    transformedO = projectionStartPrice + (scaledO - projectionFirstPrice) + interpolationRatio * projectionRotationShift
+                    transformedH = projectionStartPrice + (scaledH - projectionFirstPrice) + interpolationRatio * projectionRotationShift
+                    transformedL = projectionStartPrice + (scaledL - projectionFirstPrice) + interpolationRatio * projectionRotationShift
+                    transformedC = projectionStartPrice + (scaledC - projectionFirstPrice) + interpolationRatio * projectionRotationShift
+                    
+                    barPosition = bar_index + j + 1
+                    drawCandle(barPosition, transformedO, transformedH, transformedL, transformedC, projectionLineColor)
+
+//==================================================================
+// DRAW BOX AROUND THE HISTORICAL SEGMENT AND FUTURE SEGMENT
+// Highlight the source segments from historical data
+if not na(bestMatchOffset)
+    float boxTopMatch =           na
+    float boxBottomMatch =        na
+    int   boxLeftMatch =          na
+    int   boxRightMatch =         na
+
+    float boxTopProjection =      na
+    float boxBottomProjection =   na
+    int   boxLeftProjection =     na
+    int   boxRightProjection =    na
+
+    //==================================================================
+    // MANUAL MODE
+    if operationMode == "Manual Mode"
+        // Box around matched segment (spans the compressed historical range)
+        int startIndexMatch = selectedBarOffset
+        boxTopMatch    := ta.highest(high, historicalLength)[startIndexMatch]
+        boxBottomMatch := ta.lowest(low,  historicalLength)[startIndexMatch]
+
+        boxLeftMatch := bar_index - (startIndexMatch + historicalLength - 1)
+        boxRightMatch := bar_index - startIndexMatch
+
+        // Box around projection source segment
+        if selectedBarOffset >= (projectionLength * samplingInterval)
+            int startIndexProjection = selectedBarOffset - (projectionLength * samplingInterval)
+            int projectionSpan = projectionLength * samplingInterval
+            float maxHigh = high[startIndexProjection]
+            float minLow = low[startIndexProjection]
+            for j = 0 to projectionSpan - 1
+                maxHigh := math.max(maxHigh, high[startIndexProjection + j])
+                minLow := math.min(minLow, low[startIndexProjection + j])
+            
+            boxTopProjection := maxHigh
+            boxBottomProjection := minLow
+
+            boxLeftProjection := bar_index - (startIndexProjection + projectionSpan - 1)
+            boxRightProjection := bar_index - startIndexProjection
+
+    //==================================================================
+    // AUTO MODE
+    else if operationMode == "Auto Mode"
+        // Box around matched segment (spans the compressed historical range)
+        int startIndexMatch = bestMatchOffset
+        boxTopMatch    := ta.highest(high, historicalLength)[startIndexMatch]
+        boxBottomMatch := ta.lowest(low,  historicalLength)[startIndexMatch]
+
+        boxLeftMatch := bar_index - (startIndexMatch + historicalLength - 1)
+        boxRightMatch := bar_index - startIndexMatch
+
+        // Box around projection source segment
+        int projectionSpan = projectionLength * samplingInterval
+        if bestMatchOffset >= projectionSpan - 1
+            int startIndexProjection = bestMatchOffset - (projectionSpan - 1)
+            float maxHigh = high[startIndexProjection]
+            float minLow = low[startIndexProjection]
+            for j = 0 to projectionSpan - 1
+                maxHigh := math.max(maxHigh, high[startIndexProjection + j])
+                minLow := math.min(minLow, low[startIndexProjection + j])
+            
+            boxTopProjection := maxHigh
+            boxBottomProjection := minLow
+
+            boxLeftProjection := bar_index - (startIndexProjection + projectionSpan - 1)
+            boxRightProjection := bar_index - startIndexProjection
+
+    //==================================================================
+    // DRAW / UPDATE BOXES
+    if not na(matchHighlightBox)
+        box.delete(matchHighlightBox)
+    if not na(projectionHighlightBox)
+        box.delete(projectionHighlightBox)
+
+    // Draw matched segment highlight
+    matchHighlightBox := box.new(
+         left   = boxLeftMatch,
+         right  = boxRightMatch,
+         top    = boxTopMatch,
+         bottom = boxBottomMatch,
+         border_color = color.new(matchedLineColor, 0),
+         bgcolor      = color.new(matchedLineColor, 90)
+     )
+
+    // Draw projection source highlight
+    if not na(boxLeftProjection) and not na(boxRightProjection) and not na(boxTopProjection) and not na(boxBottomProjection)
+        projectionHighlightBox := box.new(
+             left   = boxLeftProjection,
+             right  = boxRightProjection,
+             top    = boxTopProjection,
+             bottom = boxBottomProjection,
+             border_color = color.new(projectionLineColor, 0),
+             bgcolor      = color.new(projectionLineColor, 90)
+         )
+
+//==================================================================
+// TABLE - Show correlation with plotted segment
+// Display correlation coefficient between current chart and matched historical segment
+if displayTable
+    if operationMode == "Manual Mode"
+        if array.size(matchedSegment) == correlationLength
+            // Build current chart price array
+            currentChartPrices = array.new_float(correlationLength)
+            for j = 0 to correlationLength - 1
+                array.set(currentChartPrices, j, close[j])
+            
+            // Calculate correlation between current chart and matched segment
+            liveCorrelation = calcCorr(currentChartPrices, matchedSegment, correlationLength)
+            
+            if not na(liveCorrelation)
+                correlationPercent = liveCorrelation * 100
+                
+                // Blend color based on correlation strength (-100% to +100%)
+                colorBlendRatio = (correlationPercent + 100) / 200
+                colorBlendRatio := math.max(0.0, math.min(1.0, colorBlendRatio))
+                
+                lowColorRed = color.r(lowCorrelationColor)
+                lowColorGreen = color.g(lowCorrelationColor)
+                lowColorBlue = color.b(lowCorrelationColor)
+                
+                highColorRed = color.r(highCorrelationColor)
+                highColorGreen = color.g(highCorrelationColor)
+                highColorBlue = color.b(highCorrelationColor)
+                
+                blendedRed = math.round(lowColorRed * (1 - colorBlendRatio) + highColorRed * colorBlendRatio)
+                blendedGreen = math.round(lowColorGreen * (1 - colorBlendRatio) + highColorGreen * colorBlendRatio)
+                blendedBlue = math.round(lowColorBlue * (1 - colorBlendRatio) + highColorBlue * colorBlendRatio)
+                
+                backgroundColor = color.rgb(blendedRed, blendedGreen, blendedBlue)
+                
+                // Format timestamp based on chart timeframe
+                segmentTimestamp = time[selectedBarOffset]
+                formattedTime = ""
+                
+                if timeframe.in_seconds(timeframe.period) < 3600
+                    formattedTime := str.format("{0,date,MMM dd yyyy HH:mm}", segmentTimestamp)
+                else if timeframe.in_seconds(timeframe.period) < 86400
+                    formattedTime := str.format("{0,date,MMM dd yyyy HH:mm}", segmentTimestamp)
+                else
+                    formattedTime := str.format("{0,date,MMM dd yyyy}", segmentTimestamp)
+                
+                // Build compression factor display text only if not default (1Ã—1Ã·1)
+                compressionText = ""
+                if timeExpansionFactor != 1 or timeCompressionDivisor != 1
+                    compressionText := " (—" + str.tostring(timeExpansionFactor) + "·" + str.tostring(timeCompressionDivisor) + ")"
+                
+                displayText = "Manual Mode - Correlation: " + str.tostring(correlationPercent, format.percent) + compressionText
+                
+                table.cell(correlationTable, 0, 0, text=displayText, text_color=color.white, bgcolor=backgroundColor)
+                table.cell(correlationTable, 0, 1, text=formattedTime, text_color=color.white, bgcolor=backgroundColor)
+            else
+                table.cell(correlationTable, 0, 0, text="Manual Mode - No Correlation", text_color=color.white, bgcolor=color.gray)
+                table.clear(correlationTable, 0, 1, 0, 1)
+        else
+            table.cell(correlationTable, 0, 0, text="Manual Mode - Insufficient Data", text_color=color.white, bgcolor=color.blue)
+            table.clear(correlationTable, 0, 1, 0, 1)
+            
+    else if operationMode == "Auto Mode"
+        if array.size(matchedSegment) == correlationLength
+            // Build current chart price array
+            currentChartPrices = array.new_float(correlationLength)
+            for j = 0 to correlationLength - 1
+                array.set(currentChartPrices, j, close[j])
+            
+            // Calculate correlation between current chart and matched segment
+            liveCorrelation = calcCorr(currentChartPrices, matchedSegment, correlationLength)
+            
+            if not na(liveCorrelation)
+                correlationPercent = liveCorrelation * 100
+
+                // Blend color based on correlation strength (-100% to +100%)
+                colorBlendRatio = (correlationPercent + 100) / 200
+                colorBlendRatio := math.max(0.0, math.min(1.0, colorBlendRatio))
+
+                lowColorRed = color.r(lowCorrelationColor)
+                lowColorGreen = color.g(lowCorrelationColor)
+                lowColorBlue = color.b(lowCorrelationColor)
+                
+                highColorRed = color.r(highCorrelationColor)
+                highColorGreen = color.g(highCorrelationColor)
+                highColorBlue = color.b(highCorrelationColor)
+                
+                blendedRed = math.round(lowColorRed * (1 - colorBlendRatio) + highColorRed * colorBlendRatio)
+                blendedGreen = math.round(lowColorGreen * (1 - colorBlendRatio) + highColorGreen * colorBlendRatio)
+                blendedBlue = math.round(lowColorBlue * (1 - colorBlendRatio) + highColorBlue * colorBlendRatio)
+
+                backgroundColor = color.rgb(blendedRed, blendedGreen, blendedBlue)
+                
+                // Format timestamp based on chart timeframe
+                segmentTimestamp = time[bestMatchOffset]
+                formattedTime = ""
+                
+                if timeframe.in_seconds(timeframe.period) < 3600
+                    formattedTime := str.format("{0,date,MMM dd yyyy HH:mm}", segmentTimestamp)
+                else if timeframe.in_seconds(timeframe.period) < 86400
+                    formattedTime := str.format("{0,date,MMM dd yyyy HH:mm}", segmentTimestamp)
+                else
+                    formattedTime := str.format("{0,date,MMM dd yyyy}", segmentTimestamp)
+                
+                // Build compression factor display text only if not default (1—1·1)
+                compressionText = ""
+                if timeExpansionFactor != 1 or timeCompressionDivisor != 1
+                    compressionText := " (—" + str.tostring(timeExpansionFactor) + "·" + str.tostring(timeCompressionDivisor) + ")"
+                
+                displayText = "Correlation: " + str.tostring(correlationPercent, format.percent) + compressionText
+                
+                table.cell(correlationTable, 0, 0, text=displayText, text_color=color.white, bgcolor=backgroundColor)
+                table.cell(correlationTable, 0, 1, text=formattedTime, text_color=color.white, bgcolor=backgroundColor)
+            else
+                table.cell(correlationTable, 0, 0, text="No Correlation Data", text_color=color.white, bgcolor=color.gray)
+                table.clear(correlationTable, 0, 1, 0, 1)
+        else
+            table.cell(correlationTable, 0, 0, text="No Match Found", text_color=color.white, bgcolor=color.gray)
+            table.clear(correlationTable, 0, 1, 0, 1)
+else
+    table.clear(correlationTable, start_row=0, start_column=0)

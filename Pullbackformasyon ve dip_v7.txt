@@ -1,0 +1,3157 @@
+//@version=6
+//  Pullback + E2 Formasyonlar + İYİLEŞTİRİLMİŞ DIP AL Sistemi
+// YENİ: Güçlü kırılım onayı + Aşırı uzanma filtresi + İyileştirilmiş SAT mesajları
+
+////////////////////////////////////////////////////////////////////////////////
+// ===================== PULLBACK + FORMASYONLAR + İYİLEŞTİRMELER ============
+////////////////////////////////////////////////////////////////////////////////
+indicator("MGPULL+ Formasyon + ", "B+E2+DIP", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// ===================== INPUTLAR =====================
+grpCore="Çekirdek"
+minimumGap=input.int(30,"Ana TF Min Gap (ATH kırılım bar)",minval=5,step=5,group=grpCore)
+maxBreakouts=input.int(40,"Max Breakout Kaydı (trim)",minval=10,maxval=500,group=grpCore)
+showPolylines=input.bool(true,"Breakout Üçgenlerini Çiz",group=grpCore)
+showDipMarkers=input.bool(true,"Dip Marker (tooltip)",group=grpCore)
+showGapPlots=input.bool(false,"Gap / BarsSinceBreak Plot Et",group=grpCore)
+showTable=input.bool(true,"İstatistik Tablosu (Ana TF)",group=grpCore)
+pushCurrentIntoArrays=input.bool(true,"Current değerleri dizilere kalıcı ekle (ana TF)",group=grpCore, tooltip="Açıksa her bar mevcut değerleri sample olarak ekler. İstatistiği hızlandırır ama bağımsız gözlem değildir.")
+
+// Yeni: daha sağlıklı istatistik modu (önerilir)
+statsMode = input.string("PerBar", "İstatistik Sample Modu", options=["PerBar","NewTFBarOnly"], group=grpCore,
+     tooltip="PerBar: her bar sample ekler. NewTFBarOnly: sadece bar kapanışında sample ekler (daha sağlıklı).")
+
+grpDipSat="Ana TF Sinyal (DIP / SAT)"
+dipPullbackRankThreshold=input.float(70.0,"DIP: Düzeltme YS ≥",step=1,group=grpDipSat)
+strongDipPullbackRank=input.float(90.0,"DIP: KESİN AL Düzeltme YS ≥",step=1,group=grpDipSat)
+dipRequireLowRunup=input.bool(true,"DIP: Yükseliş Devamı YS düşük/normal olsun",group=grpDipSat)
+dipMaxRunupRank=input.float(50.0,"DIP: Yükseliş Devamı YS ≤",step=1,group=grpDipSat)
+sellRunupRankThreshold=input.float(92.0,"SAT: Yükseliş Devamı YS ≥",step=1,group=grpDipSat)
+strongSatRunupRank=input.float(95.0,"SAT: KESİN SAT Yükseliş Devamı YS ≥",step=1,group=grpDipSat)
+sellRequireShallowPullback=input.bool(false,"SAT: Düzeltme YS sığ olsun",group=grpDipSat)
+sellShallowPullbackRank=input.float(30.0,"SAT: Düzeltme YS ≤",step=1,group=grpDipSat)
+// Yeni: SAT kalite filtreleri (erken SAT azaltma)
+satRequireMinPullback=input.bool(true,"SAT: Min Düzeltme Şartı",group=grpDipSat,tooltip="SAT için minimum düzeltme yüzdesi gereksinimi")
+satMinPullbackPct=input.float(5.0,"SAT: Min Düzeltme %",step=0.5,group=grpDipSat)
+satMinHoldBars=input.int(5,"SAT: Min Hold Bar (DIP'ten sonra)",minval=0,group=grpDipSat,tooltip="DIP sinyalinden sonra minimum beklenecek bar sayısı")
+satRequireTrendWeakness=input.bool(false,"SAT: Trend Zayıflığı Şartı (opsiyonel)",group=grpDipSat,tooltip="Açıksa EMA zayıflığı veya momentum düşüşü gerektirir. Default kapalı.")
+enableDipAlert=input.bool(true,"Ana TF DIP Alarm Aktif",group=grpDipSat)
+enableSatAlert=input.bool(true,"Ana TF SAT Alarm Aktif",group=grpDipSat)
+
+grpGate="Ana TF Gating / Spam"
+labelOncePerBreakout=input.bool(true,"Breakout başına tek DIP/SAT",group=grpGate)
+minBarsBetweenSignals=input.int(20,"Sinyaller arası min bar",minval=0,group=grpGate)
+deltaRunupMin=input.float(5.0,"Tekrar SAT için ek Yükseliş Devamı% ≥",step=0.5,group=grpGate)
+deltaPullbackMin=input.float(3.0,"Tekrar DIP için ek Düzeltme% ≥",step=0.5,group=grpGate)
+showDipLabelsFinal=input.bool(true,"Ana TF DIP Label",group=grpGate)
+showSatLabelsFinal=input.bool(true,"Ana TF SAT Label",group=grpGate)
+
+grpCool="Ana TF Cooldown"
+dailyOnceDip=input.bool(false,"DIP: Günde Bir",group=grpCool)
+dailyOnceSat=input.bool(false,"SAT: Günde Bir",group=grpCool)
+cooldownDipMin=input.int(60,"DIP Cooldown (dk)",minval=0,group=grpCool)
+cooldownSatMin=input.int(60,"SAT Cooldown (dk)",minval=0,group=grpCool)
+
+grpATR="ATR Filtresi"
+enableAtrFilter=input.bool(false,"ATR Filtresi Aktif",group=grpATR)
+atrLength=input.int(14,"ATR Length",minval=1,group=grpATR)
+atrMinMultiplier=input.float(0.5,"ATR Min (Close*mult)",step=0.1,group=grpATR)
+atrMaxMultiplier=input.float(3.0,"ATR Max (Close*mult)",step=0.1,group=grpATR)
+
+grpMTF="MTF DIP/SAT"
+mtf_enable=input.bool(true,"MTF Tarama Aktif",group=grpMTF)
+mtf_use_1h=input.bool(true,"1H Tarama",group=grpMTF)
+mtf_use_2h=input.bool(true,"2H Tarama",group=grpMTF)
+mtf_use_4h=input.bool(true,"4H Tarama",group=grpMTF)
+mtf_use_1d=input.bool(true,"1D Tarama",group=grpMTF)
+mtf_min_gap=input.int(30,"MTF Min Gap (bar, TF bazlı)",minval=5,group=grpMTF, tooltip="Bu değer artık MTF bar sayısı ile ölçülür. Örn 1H için 30 => 30 saatlik minimum ATH aralığı.")
+mtfHistLimit=input.int(150,"MTF Kayıt Limit",minval=30,maxval=600,group=grpMTF)
+mtf_dip_rank_adj_1h=input.float(5.0,"1H DIP YS +Adj",step=1,group=grpMTF)
+mtf_sat_rank_adj_1h=input.float(3.0,"1H SAT YS +Adj",step=1,group=grpMTF)
+mtf_dip_rank_adj_2h=input.float(2.0,"2H DIP YS +Adj",step=1,group=grpMTF)
+mtf_sat_rank_adj_2h=input.float(2.0,"2H SAT YS +Adj",step=1,group=grpMTF)
+mtf_dip_rank_adj_4h=input.float(0.0,"4H DIP YS +Adj",step=1,group=grpMTF)
+mtf_sat_rank_adj_4h=input.float(0.0,"4H SAT YS +Adj",step=1,group=grpMTF)
+mtf_dip_rank_adj_1d=input.float(-5.0,"1D DIP YS +Adj",step=1,group=grpMTF)
+mtf_sat_rank_adj_1d=input.float(-5.0,"1D SAT YS +Adj",step=1,group=grpMTF)
+mtf_cooldown_min=input.int(90,"MTF Cooldown (dk;0=Ana)",minval=0,group=grpMTF)
+mtf_show_labels=input.bool(false,"MTF Label Göster",group=grpMTF)
+mtf_use_filters=input.bool(true,"MTF için Güçlü Kırılım ve Aşırı Uzanma Filtresi",group=grpMTF,tooltip="Aktifse, MTF sinyalleri de Ana TF gibi güçlü kırılım onayı ve aşırı uzanma filtresi gerektirir")
+
+// Mesaj Terminolojisi
+grpLang="Mesaj Dili"
+useClearTR = input.bool(true, "Mesajlarda Net Türkçe Kullan", group=grpLang, tooltip="Runup gibi terimler yerine 'Yükseliş Devamı / Yükseliş Potansiyeli / Düşüş Potansiyeli' kullanır.")
+
+// MTF metrik modu
+grpMetric="Metrik Tanımı"
+runupMode = input.string("FromBreakout", "Yükseliş Devamı Tanımı", options=["FromBreakout","FromDip"], group=grpMetric,
+     tooltip="FromBreakout: Eski ATH (breakout referansı) -> yeni ATH farkı. FromDip: Son dip -> tepe (toplam hareket).")
+
+grpMC="MultiConfirm"
+multiConfirmEnable=input.bool(false,"Çoklu Onay Aktif",group=grpMC)
+multiConfirmMode=input.string("Any2SameSide","Mod",options=["Any2SameSide","StrongAndMTF","All3MTF"],group=grpMC)
+multiConfirmLookbackBars=input.int(3,"Lookback (bar)",minval=1,group=grpMC)
+multiConfirmCooldownMin=input.int(120,"MC Cooldown (dk)",minval=0,group=grpMC)
+multiConfirmChatId=input.string("","MC ayrı chat_id",group=grpMC)
+multiConfirmIncludeApprox=input.bool(true,"Approx değerleri ekle",group=grpMC)
+multiConfirmMinRunupDelta=input.float(0.0,"MC SAT ek Yükseliş Devamı% delta ≥",step=0.5,group=grpMC)
+multiConfirmMinPullDelta=input.float(0.0,"MC DIP ek Düzeltme% delta ≥",step=0.5,group=grpMC)
+
+grpAdv="Gelişmiş"
+percentileEnableBands=input.bool(true,"Percentile Bantlarını Hesapla",group=grpAdv)
+percentileMinSamples=input.int(15,"Percentile Min Kayıt",minval=5,group=grpAdv)
+hitRateEnable=input.bool(true,"Hit Rate Takibi",group=grpAdv)
+hitRateMaxBarsEval=input.int(120,"Hit Rate Max Değerlendirme Bar",minval=10,group=grpAdv)
+hitRateRecentWindow=input.int(20,"Hit Rate Son N Sinyal",minval=5,group=grpAdv)
+hitRateTargetMode=input.string("Medyan","Hit Rate Hedef Modu",options=["Konservatif","Medyan","Agresif"],group=grpAdv)
+stopAtrMultiplier=input.float(0.8,"Stop ATR Çarpanı",step=0.1,minval=0.1,group=grpAdv)
+messageMultiline=input.bool(true,"Telegram Mesajları Alt Alta",group=grpAdv)
+
+grpTele="Telegram"
+useJsonAlert=input.bool(true,"JSON Format Gönder (B&P için hep JSON)",group=grpTele)
+telegramDipChatId=input.string("-1002781417418","DIP chat_id",group=grpTele)
+telegramSatChatId=input.string("-1002587291984","SAT chat_id",group=grpTele)
+upperTR=input.bool(true,"Mesajları ASCII Büyük",group=grpTele)
+
+grpColors="Renkler"
+colorDeep=input.color(color.new(color.green,0),"DIP Label",group=grpColors)
+colorSat=input.color(color.new(color.red,0),"SAT Label",group=grpColors)
+colorTriangle=input.color(color.new(color.yellow,0),"Üçgen",group=grpColors)
+colorMtfDip=input.color(color.new(color.teal,0),"MTF DIP Label",group=grpColors)
+colorMtfSat=input.color(color.new(color.maroon,0),"MTF SAT Label",group=grpColors)
+
+// ===================== İYİLEŞTİRME: Kırılım Onayı =====================
+grpBrk="Güçlü Kırılım Onayı"
+enableBreakoutConfirm=input.bool(true,"Güçlü Kırılım Onayı Aktif (AL için)",group=grpBrk)
+brkDonLen=input.int(16,"Donchian Uzunluk",minval=5,group=grpBrk) //eger cok mesaj gelirse geri 20 yap
+brkVolMult=input.float(1.2,"Hacim SMA(20) x",minval=1.0,step=0.1,group=grpBrk)  //Eger cok sahte gelirse tekrar 1,5 yap
+brkClosePct=input.float(70,"Güçlü Kapanış %",minval=50,maxval=100,step=5,group=grpBrk)
+
+// ===================== İYİLEŞTİRME: Aşırı Uzanma =====================
+grpOvx="Aşırı Uzanma Filtresi"
+enableOverextFilter=input.bool(true,"Aşırı Uzanma Filtresi (AL engelle)",group=grpOvx)
+ovx5d=input.float(20,"5d Yükseliş Limit %",minval=10,step=5,group=grpOvx)
+ovx20d=input.float(50,"20d Yükseliş Limit %",minval=20,step=10,group=grpOvx)
+ovx126d=input.float(250,"126d Yükseliş Limit %",minval=100,step=25,group=grpOvx)
+
+// ===================== İYİLEŞTİRME: SAT Semantiği =====================
+grpSatSem="SAT Mesaj Semantiği"
+sellSplit=input.bool(false,"İki Tip SAT (KAR AL vs ÇIKIŞ)",group=grpSatSem)  //false yaptim KAR AL mesajlari önce kapansin diye. duruma göre ac. 
+sellExitThreshold=input.float(90,"ÇIKIŞ için YS Eşik",minval=80,step=5,group=grpSatSem)
+
+// ===================== Yardımcılar =====================
+f_clamp_extreme(v, maxAbs)=>
+    na(v) ? na : (v > maxAbs ? maxAbs : v < -maxAbs ? -maxAbs : v)
+
+f_stat_bucket(pr)=>
+    na(pr) ? "ISTATISTIK: VERI YOK" : pr >= 97 ? "ISTATISTIK: EN ÜST %3" : pr >= 90 ? "ISTATISTIK: EN ÜST %10" :  pr >= 75 ? "ISTATISTIK: ÜST %25" :  pr >= 50 ? "ISTATISTIK: ORTA GRUP" :  pr >= 25 ? "ISTATISTIK: ALT %50" : "ISTATISTIK: EN ALT GRUP"
+
+fmtPctValue(v)=>na(v)?"NA":str.tostring(v, "#.##")+"%"
+fmtMintMsg(v)=>na(v)?"NA":str.tostring(v,format.mintick)
+
+// ===================== İYİLEŞTİRME: Yeni Fonksiyonlar =====================
+// Güçlü kırılım kontrolü (kompakt)
+f_brk_ok()=>
+    if not enableBreakoutConfirm
+        true
+    else
+        donHi=ta.highest(high,brkDonLen)
+        brk=close>donHi[1]
+        rng=high-low
+        clsPct=rng>0?(close-low)/rng*100:0
+        vsma=ta.sma(volume,20)
+        brk and clsPct>=brkClosePct and volume>vsma*brkVolMult
+
+// Aşırı uzanma kontrolü (kompakt)
+f_ovx_check()=>
+    if not enableOverextFilter
+        false
+    else
+        [d1,d5,d20,d126]=request.security(syminfo.tickerid,"D",[close[1],close[5],close[20],close[126]],barmerge.gaps_off,barmerge.lookahead_on)
+        r5=na(d5) or d5==0?0:(close-d5)/d5*100
+        r20=na(d20) or d20==0?0:(close-d20)/d20*100
+        r126=na(d126) or d126==0?0:(close-d126)/d126*100
+        r5>=ovx5d or r20>=ovx20d or r126>=ovx126d
+
+
+f_fmtRate(r) => na(r) ? "NA" : str.tostring(r * 100, "#.00") + "%"
+
+// ===================== Güç Fonksiyonları (etiket) =====================
+f_strength_dip(prPb,prRu,strongThr,lowRunupThr)=>
+    prPb >= strongThr and (na(prRu) or prRu <= lowRunupThr) ? "KESİN AL" : "AL"
+
+f_strength_sat(prRu,prPb,strongThr,shallowThr)=>
+    prRu >= strongThr and (na(prPb) or (not na(shallowThr) and prPb <= shallowThr)) ? "KESİN SAT" : "SAT"
+
+// ===================== Tipler & Metodlar =====================
+type ATHData
+    float pullbackPrice
+    float pullbackPercent
+    int   pullbackBars
+    int   recoveryBars
+    int   span
+    int   distanceFromLast
+    float priceFromLast
+    float percentFromLast
+    float runup
+    float runupPercent
+    int   runupBars
+    float totalRunup
+    float totalRunupPercent
+    int   totalRunupBars
+
+type ATHBreakout
+    chart.point start
+    chart.point end
+    chart.point lowest
+    chart.point last
+    chart.point highest
+    ATHData     data
+    polyline    triangle
+    label       lbl
+
+method populateData(ATHBreakout this)=>
+    this.data := ATHData.new()
+    this.data.pullbackPrice   := this.start.price - this.lowest.price
+    this.data.pullbackPercent := this.data.pullbackPrice*100/this.start.price
+    this.data.pullbackBars    := this.lowest.index - this.start.index
+    this.data.recoveryBars    := this.end.index - this.lowest.index
+    this.data.span            := this.end.index - this.start.index
+    if not na(this.last)
+        this.data.distanceFromLast := this.start.index - this.last.index
+        this.data.priceFromLast    := this.start.price - this.last.price
+        this.data.percentFromLast  := this.data.priceFromLast*100/this.last.price
+    if not na(this.highest)
+        this.data.runup            := this.highest.price - this.end.price
+        this.data.runupPercent     := this.data.runup*100/this.end.price
+        this.data.runupBars        := this.highest.index - this.end.index
+        this.data.totalRunup       := this.highest.price - this.lowest.price
+        this.data.totalRunupPercent:= this.data.totalRunup*100/this.lowest.price
+        this.data.totalRunupBars   := this.highest.index - this.lowest.index
+    this
+
+method updateData(ATHBreakout this)=>
+    if not na(this.highest)
+        this.data.runup            := this.highest.price - this.end.price
+        this.data.runupPercent     := this.data.runup*100/this.end.price
+        this.data.runupBars        := this.highest.index - this.end.index
+        this.data.totalRunup       := this.highest.price - this.lowest.price
+        this.data.totalRunupPercent:= this.data.totalRunup*100/this.lowest.price
+        this.data.totalRunupBars   := this.highest.index - this.lowest.index
+
+method getTooltip(ATHData this)=>
+    str.format("ÖnYüks:{3}({4})/{5} | İlk Düz:{0}({1})/{2} | Recovery:{9} | Devam Yüks:{6}({7})/{8}",
+      this.pullbackPrice,str.tostring(this.pullbackPercent,format.percent),this.pullbackBars,
+      this.priceFromLast,str.tostring(this.percentFromLast,format.percent),this.distanceFromLast,
+      this.runup,str.tostring(this.runupPercent,format.percent),this.runupBars,this.recoveryBars)
+
+method draw(ATHBreakout this)=>
+    this.updateData()
+    if showPolylines
+        pts = array.from(this.start,this.lowest,this.end,this.highest)
+        if not na(this.triangle)
+            this.triangle.delete()
+        if not na(this.start) and not na(this.lowest) and not na(this.end) and not na(this.highest)
+            this.triangle := polyline.new(pts,false,false,xloc.bar_time,colorTriangle,force_overlay=true)
+    if showDipMarkers
+        if not na(this.lbl)
+            this.lbl.delete()
+        if not na(this.lowest)
+            this.lbl := label.new(this.lowest,"",xloc.bar_time,yloc.belowbar,colorDeep,label.style_square,size=size.tiny,tooltip=this.data.getTooltip(),textcolor=color.white,force_overlay=true)
+
+// ===================== Breakout Mantığı (Ana TF) =====================
+var chart.point ath = chart.point.now(high)
+var chart.point lastAthBreakBar = na
+var int lastGap = na
+var chart.point localLow = chart.point.now(low)
+var array<ATHBreakout> breakouts = array.new<ATHBreakout>()
+var ATHBreakout lastbreakout = na
+
+gap = high > ath.price ? bar_index - ath.index : 0
+ath := high > ath.price ? chart.point.now(high) : ath
+localLow := low <= localLow.price ? chart.point.now(low) : localLow
+
+if gap >= minimumGap
+    lastAthBreakBar := ath
+    lastGap := gap
+    prevAth = ath[1]
+    currentAth = chart.point.new(ath.time,ath.index,prevAth.price)
+    lastbreakout := ATHBreakout.new(prevAth,currentAth,localLow, breakouts.size()>0?breakouts.last().end:na).populateData()
+    breakouts.push(lastbreakout)
+    while array.size(breakouts) > maxBreakouts
+        old = array.shift(breakouts)
+        if not na(old.triangle)
+            old.triangle.delete()
+        if not na(old.lbl)
+            old.lbl.delete()
+
+if gap > 0
+    localLow := chart.point.now(low)
+
+if not na(lastbreakout)
+    lastbreakout.highest := ath
+    lastbreakout.draw()
+
+plot(showGapPlots?lastGap:na,"Gap",color=color.new(color.red,0))
+plot(showGapPlots?(na(lastAthBreakBar)?na:bar_index-lastAthBreakBar.index):na,"BarsSinceBreak",color=color.new(color.blue,0))
+
+// ===================== Dizileri Topla (Ana TF) =====================
+getArrays(br)=>
+    array<float> aPb=array.new_float()
+    array<float> aRu=array.new_float()
+    for b in br
+        aPb.push(b.data.pullbackPercent)
+        ruVal = runupMode == "FromBreakout" ? b.data.runupPercent : b.data.totalRunupPercent
+        aRu.push(ruVal)
+    [aPb,aRu]
+
+[pullbackPercents,runUpPercents]=getArrays(breakouts)
+
+// ===================== Metrikler (Ana TF) =====================
+float currentPullbackPercent=na
+float currentRunupPercent=na
+
+if not na(lastbreakout)
+    rawPb = (lastbreakout.highest.price - low)*100/lastbreakout.highest.price
+    ru = runupMode == "FromBreakout" ? lastbreakout.data.runupPercent : lastbreakout.data.totalRunupPercent
+    rawRu = high < lastbreakout.end.price ? 0.0 : ru
+    currentPullbackPercent := f_clamp_extreme(rawPb, 1000)
+    currentRunupPercent    := f_clamp_extreme(rawRu, 1000)
+
+// Sample ekleme (daha sağlıklı opsiyon)
+bool shouldSampleAna = pushCurrentIntoArrays and not na(currentPullbackPercent) and not na(currentRunupPercent) and (statsMode == "PerBar" ? true : barstate.isconfirmed)
+if shouldSampleAna
+    pullbackPercents.push(currentPullbackPercent)
+    runUpPercents.push(currentRunupPercent)
+
+// Rank fonksiyonu
+f_rank(arr,v)=>
+    sz=array.size(arr)
+    if sz==0
+        na
+    else
+        c=0
+        for i=0 to sz-1
+            if array.get(arr,i) <= v
+                c+=1
+        c*100.0/sz
+
+prPullback = not na(currentPullbackPercent)?f_rank(pullbackPercents,currentPullbackPercent):na
+prRunup    = not na(currentRunupPercent)?f_rank(runUpPercents,currentRunupPercent):na
+
+pbMed = array.size(pullbackPercents)>0 ? pullbackPercents.median():na
+ruMed = array.size(runUpPercents)>0 ? runUpPercents.median():na
+
+approxDipTarget  = na(ruMed)?na:close*(1+ruMed/100.0)
+approxSatRetrace = na(pbMed)?na:close*(1-pbMed/100.0)
+
+// ===================== Percentile Bantları =====================
+f_get_percentile(arrSorted,sz,p)=>
+    pos=(p/100.0)*(sz-1)
+    lo=math.floor(pos)
+    hi=math.ceil(pos)
+    vLo=array.get(arrSorted,lo)
+    vHi=array.get(arrSorted,hi)
+    lo==hi? vLo : vLo + (pos-lo)*(vHi-vLo)
+
+f_percentiles(arr)=>
+    sz=array.size(arr)
+    if sz<percentileMinSamples
+        [na,na,na]
+    else
+        arrCopy=array.copy(arr)
+        array.sort(arrCopy,order.ascending)
+        [f_get_percentile(arrCopy,sz,25),f_get_percentile(arrCopy,sz,50),f_get_percentile(arrCopy,sz,75)]
+
+var float pbP25 = na
+var float pbP50 = pbMed
+var float pbP75 = na
+var float ruP25 = na
+var float ruP50 = ruMed
+var float ruP75 = na
+
+if percentileEnableBands
+    [tmpRu25, tmpRu50, tmpRu75] = f_percentiles(runUpPercents)
+    [tmpPb25, tmpPb50, tmpPb75] = f_percentiles(pullbackPercents)
+    ruP25 := tmpRu25
+    ruP50 := tmpRu50
+    ruP75 := tmpRu75
+    pbP25 := tmpPb25
+    pbP50 := tmpPb50
+    pbP75 := tmpPb75
+else
+    ruP25 := na
+    ruP50 := na
+    ruP75 := na
+    pbP25 := na
+    pbP50 := na
+    pbP75 := na
+
+// ===================== ATR Filtresi =====================
+atrValue=ta.atr(atrLength)
+atrOkDip = not enableAtrFilter or (atrValue>=close*atrMinMultiplier and atrValue<=close*atrMaxMultiplier)
+atrOkSat = atrOkDip
+
+// ===================== Hit Rate Yapıları =====================
+var int   dipSignals    = 0
+var int   satSignals    = 0
+var int   dipSuccesses  = 0
+var int   satSuccesses  = 0
+
+// FIX: dipHitRate/satHitRate na ile başlayabilir ama Pine bazen sorun çıkarıyor -> 0.0 başlatmak daha stabil
+var float dipHitRate        = 0.0
+var float satHitRate        = 0.0
+var float dipHitRateRecent  = na
+var float satHitRateRecent  = na
+
+var array<int>   openType      = array.new_int()
+var array<float> openEntry     = array.new_float()
+var array<float> openTarget    = array.new_float()
+var array<float> openStop      = array.new_float()
+var array<int>   openExpiryBar = array.new_int()
+var array<bool>  openActive    = array.new_bool()
+var array<bool>  dipHistory    = array.new_bool()
+var array<bool>  satHistory    = array.new_bool()
+
+f_rollingRate(histArr, win)=>
+    sz = array.size(histArr)
+    if sz==0
+        na
+    else
+        start = math.max(0, sz - win)
+        s = 0
+        c = 0
+        for i = start to sz-1
+            if array.get(histArr, i)
+                s += 1
+            c += 1
+        c==0 ? na : s/c
+
+f_selectTargetValues(isDip)=>
+    if not percentileEnableBands
+        [na, na, na]
+    else
+        if isDip
+            [ruP25, ruP50, ruP75]
+        else
+            [pbP25, pbP50, pbP75]
+
+f_choosePercentileValue(mode,p25,p50,p75)=>
+    mode=="Konservatif"?p25:mode=="Medyan"?p50:p75
+
+f_recordSignal(isDip,entryPrice)=>
+    bool recorded=false
+    if hitRateEnable
+        [p25,p50,p75]=f_selectTargetValues(isDip)
+        tgtPercent=percentileEnableBands?f_choosePercentileValue(hitRateTargetMode,p25,p50,p75):na
+        targetPrice = na(tgtPercent)?na:(isDip?entryPrice*(1+tgtPercent/100.0):entryPrice*(1-tgtPercent/100.0))
+        stopPrice   = isDip? entryPrice - atrValue*stopAtrMultiplier : entryPrice + atrValue*stopAtrMultiplier
+        expiryBar   = bar_index + hitRateMaxBarsEval
+        array.push(openType,isDip?1:2)
+        array.push(openEntry,entryPrice)
+        array.push(openTarget,targetPrice)
+        array.push(openStop,stopPrice)
+        array.push(openExpiryBar,expiryBar)
+        array.push(openActive,true)
+        recorded:=true
+    recorded
+
+f_evaluateSignals() =>
+    int dipSuccInc=0
+    int satSuccInc=0
+    if hitRateEnable
+        sz=array.size(openType)
+        if sz>0
+            for i=0 to sz-1
+                if array.get(openActive,i)
+                    t=array.get(openType,i)
+                    tgt=array.get(openTarget,i)
+                    stp=array.get(openStop,i)
+                    exp=array.get(openExpiryBar,i)
+                    success=false
+                    if t==1 and not na(tgt) and high>=tgt
+                        success:=true
+                    if t==2 and not na(tgt) and low<=tgt
+                        success:=true
+                    if not success
+                        if t==1 and low<=stp
+                            array.set(openActive,i,false)
+                            array.push(dipHistory,false)
+                            continue
+                        if t==2 and high>=stp
+                            array.set(openActive,i,false)
+                            array.push(satHistory,false)
+                            continue
+                    if success
+                        array.set(openActive,i,false)
+                        if t==1
+                            dipSuccInc+=1
+                            array.push(dipHistory,true)
+                        else
+                            satSuccInc+=1
+                            array.push(satHistory,true)
+                    else if bar_index>exp
+                        array.set(openActive,i,false)
+                        if t==1
+                            array.push(dipHistory,false)
+                        else
+                            array.push(satHistory,false)
+        if array.size(dipHistory)>400
+            array.shift(dipHistory)
+        if array.size(satHistory)>400
+            array.shift(satHistory)
+    [dipSuccInc,satSuccInc]
+
+[dInc,sInc]=f_evaluateSignals()
+dipSuccesses+=dInc
+satSuccesses+=sInc
+
+f_calcStopRR(isDip,entry)=>
+    if not percentileEnableBands
+        [na,na,na]
+    else
+        [p25,p50,p75]=f_selectTargetValues(isDip)
+        tgtPerc=f_choosePercentileValue(hitRateTargetMode,p25,p50,p75)
+        if na(tgtPerc)
+            [na,na,na]
+        else
+            stop=isDip? entry - atrValue*stopAtrMultiplier : entry + atrValue*stopAtrMultiplier
+            target=isDip? entry*(1+tgtPerc/100.0) : entry*(1-tgtPerc/100.0)
+            rr=isDip? (target-entry)/(entry-stop) : (entry-target)/(stop-entry)
+            [stop,target,rr]
+
+// ===================== MESAJ MOTORU =====================
+f_lineJoin(lines)=>
+    sep = messageMultiline ? "\n" : " | "
+    sz  = array.size(lines)
+    if sz == 0
+        ""
+    else
+        out = array.get(lines, 0)
+        for i = 1 to sz-1
+            out += sep + array.get(lines, i)
+        out
+
+f_toUpperIfNeeded(s)=>
+    if not upperTR
+        s
+    else
+        x = s
+        x := str.replace_all(x,"ç","c")
+        x := str.replace_all(x,"ğ","g")
+        x := str.replace_all(x,"ı","i")
+        x := str.replace_all(x,"ö","o")
+        x := str.replace_all(x,"ş","s")
+        x := str.replace_all(x,"ü","u")
+        x := str.replace_all(x,"Ç","C")
+        x := str.replace_all(x,"Ğ","G")
+        x := str.replace_all(x,"İ","I")
+        x := str.replace_all(x,"Ö","O")
+        x := str.replace_all(x,"Ş","S")
+        x := str.replace_all(x,"Ü","U")
+        str.upper(x)
+
+f_escape_json(s)=>
+    _s = str.replace_all(s,"\\","\\\\")
+    _s := str.replace_all(_s,"\"","\\\"")
+    _s := str.replace_all(_s,"\n","\\n")
+    _s := str.replace_all(_s,"\r","")
+    _s := str.replace_all(_s,"\t","\\t")
+    _s
+
+send_msg(chatId, raw)=>
+    txt     = f_toUpperIfNeeded(raw)
+    payload = "{\"chat_id\":\""+chatId+"\",\"text\":\""+f_escape_json(txt)+"\"}"
+    alert(payload, alert.freq_once_per_bar_close)
+
+// ===================== AL/SAT MESAJLARI (Ana TF) =====================
+f_metricLabelRunup() =>
+    useClearTR ? (runupMode=="FromBreakout" ? "YÜKSELİŞ DEVAMI (ATH ÜZERİ)" : "TOPLAM YÜKSELİŞ (DİPTEN)") : "RUNUP"
+
+buildDipMsg() =>
+    [stopD, targetD, rrD] = f_calcStopRR(true, close)
+    tfLabel = timeframe.period
+    lines = array.new_string()
+
+    array.push(lines, "ANA TF: AL / DIP FIRSATI ("+f_strength_dip(prPullback,prRunup,strongDipPullbackRank,dipMaxRunupRank)+")")
+    array.push(lines, "HISSE: "+syminfo.ticker+" | TF: "+tfLabel+" | FIYAT: "+fmtMintMsg(close))
+    array.push(lines, "")
+
+    array.push(lines, "DÜZELTME (GERİ ÇEKİLME): "+fmtPctValue(currentPullbackPercent)+"  ("+f_stat_bucket(prPullback)+")")
+    array.push(lines, f_metricLabelRunup()+": "+fmtPctValue(currentRunupPercent)+"  ("+f_stat_bucket(prRunup)+")")
+    array.push(lines, "")
+
+    hedefText = na(targetD) ? (na(approxDipTarget) ? "NA" : fmtMintMsg(approxDipTarget)+" (MEDYAN HEDEF)") : fmtMintMsg(targetD)
+    potUpPct = na(targetD) ? (na(approxDipTarget) ? na : (approxDipTarget/close - 1)*100) : (targetD/close - 1)*100
+
+    array.push(lines, "BEKLENEN YÜKSELİŞ İMKANI: "+(na(potUpPct)?"NA":str.tostring(potUpPct,"#.##")+"%"))
+    array.push(lines, "HEDEF FİYAT: "+hedefText)
+    array.push(lines, "STOP SEVİYESİ: "+fmtMintMsg(stopD))
+    array.push(lines, "RİSK/ÖDÜL ORANI: "+(na(rrD)?"NA":"1:"+str.tostring(rrD,"#.##")))
+    array.push(lines, "")
+
+    array.push(lines, "YORUM: İSTATİSTİKSEL OLARAK DERİN DÜZELTME BÖLGESİ. DÜŞÜŞ YAVAŞLIYORSA TOPLAMA / AL DÜŞÜNÜLEBİLİR.")
+    if hitRateEnable
+        array.push(lines, "")
+        array.push(lines, "HITRATE AL (TOPLAM): "+(dipSignals>0?f_fmtRate(dipHitRate):"YOK")+" | SİNYAL: "+str.tostring(dipSignals))
+        array.push(lines, "HITRATE AL (SON "+str.tostring(hitRateRecentWindow)+"): "+(not na(dipHitRateRecent)?f_fmtRate(dipHitRateRecent):"NA"))
+    array.push(lines, "")
+    f_lineJoin(lines)
+
+buildSatMsg() =>
+    [stopS, targetS, rrS] = f_calcStopRR(false, close)
+    tfLabel = timeframe.period
+    lines = array.new_string()
+
+    array.push(lines, "ANA TF: SAT / KAR AL ("+f_strength_sat(prRunup,prPullback,strongSatRunupRank,sellShallowPullbackRank)+")")
+    array.push(lines, "HISSE: "+syminfo.ticker+" | TF: "+tfLabel+" | FIYAT: "+fmtMintMsg(close))
+    array.push(lines, "")
+
+    array.push(lines, f_metricLabelRunup()+": "+fmtPctValue(currentRunupPercent)+"  ("+f_stat_bucket(prRunup)+")")
+    array.push(lines, "MEVCUT DÜZELTME: "+fmtPctValue(currentPullbackPercent)+"  ("+f_stat_bucket(prPullback)+")")
+    array.push(lines, "")
+
+    hedefText = na(targetS) ? (na(approxSatRetrace) ? "NA" : fmtMintMsg(approxSatRetrace)+" (MEDYAN DÜZELTME)") : fmtMintMsg(targetS)
+    potDnPct = na(targetS) ? (na(approxSatRetrace) ? na : (1 - approxSatRetrace/close)*100) : (1 - targetS/close)*100
+
+    array.push(lines, "BEKLENEN DÜŞÜŞ İMKANI: "+(na(potDnPct)?"NA":str.tostring(potDnPct,"#.##")+"%"))
+    array.push(lines, "DÜZELTME HEDEF FİYATI: "+hedefText)
+    array.push(lines, "STOP SEVİYESİ: "+fmtMintMsg(stopS))
+    array.push(lines, "RİSK/ÖDÜL ORANI: "+(na(rrS)?"NA":"1:"+str.tostring(rrS,"#.##")))
+    array.push(lines, "")
+
+    array.push(lines, "YORUM: İSTATİSTİKSEL OLARAK AŞIRI YÜKSELİŞ BÖLGESİ. KÂR AL / RİSK AZALTMA DÜŞÜNÜLEBİLİR.")
+    if hitRateEnable
+        array.push(lines, "")
+        array.push(lines, "HITRATE SAT (TOPLAM): "+(satSignals>0?f_fmtRate(satHitRate):"YOK")+" | SİNYAL: "+str.tostring(satSignals))
+        array.push(lines, "HITRATE SAT (SON "+str.tostring(hitRateRecentWindow)+"): "+(not na(satHitRateRecent)?f_fmtRate(satHitRateRecent):"NA"))
+    array.push(lines, "")
+    f_lineJoin(lines)
+
+// ===================== Gating & Cooldown + Sinyal Açma (Ana TF) =====================
+var int   lastDipSignalBar=na
+var int   lastSatSignalBar=na
+var float lastDipPullbackPercent=na
+var float lastSatRunupPercent=na
+var int   lastDipBreakoutId=-1
+var int   lastSatBreakoutId=-1
+currBreakoutId=breakouts.size()-1
+
+crossDip=enableDipAlert and atrOkDip and not na(prPullback) and prPullback>=dipPullbackRankThreshold and (na(prPullback[1]) or prPullback[1]<dipPullbackRankThreshold)
+if dipRequireLowRunup and crossDip and not na(prRunup)
+    crossDip:=prRunup<=dipMaxRunupRank
+
+crossSat=enableSatAlert and atrOkSat and not na(prRunup) and prRunup>=sellRunupRankThreshold and (na(prRunup[1]) or prRunup[1]<sellRunupRankThreshold)
+if sellRequireShallowPullback and crossSat and not na(prPullback)
+    crossSat:=prPullback<=sellShallowPullbackRank
+
+// İYİLEŞTİRME: SAT için ek kalite filtreleri
+if satRequireMinPullback and crossSat
+    crossSat := not na(currentPullbackPercent) and currentPullbackPercent >= satMinPullbackPct
+if satMinHoldBars > 0 and crossSat and not na(lastDipSignalBar)
+    crossSat := (bar_index - lastDipSignalBar) >= satMinHoldBars
+if satRequireTrendWeakness and crossSat
+    ema9 = ta.ema(close, 9)
+    ema21 = ta.ema(close, 21)
+    rsi14 = ta.rsi(close, 14)
+    trendWeak = (ema9 < ema21) or (close < ema9 and rsi14 < 50)
+    crossSat := trendWeak
+
+dipGateOk=crossDip
+satGateOk=crossSat
+if labelOncePerBreakout and dipGateOk
+    dipGateOk:=lastDipBreakoutId!=currBreakoutId
+if labelOncePerBreakout and satGateOk
+    satGateOk:=lastSatBreakoutId!=currBreakoutId
+if dipGateOk and not na(lastDipSignalBar)
+    dipGateOk:=bar_index-lastDipSignalBar>=minBarsBetweenSignals
+if satGateOk and not na(lastSatSignalBar)
+    satGateOk:=bar_index-lastSatSignalBar>=minBarsBetweenSignals
+if dipGateOk and not na(lastDipPullbackPercent)
+    dipGateOk:=(currentPullbackPercent-lastDipPullbackPercent)>=deltaPullbackMin
+if satGateOk and not na(lastSatRunupPercent)
+    satGateOk:=(currentRunupPercent-lastSatRunupPercent)>=deltaRunupMin
+
+dipCooldownMs=cooldownDipMin*60*1000
+satCooldownMs=cooldownSatMin*60*1000
+var int dipLastTime=na
+var int satLastTime=na
+timeOkDip=cooldownDipMin==0 or na(dipLastTime) or time-dipLastTime>dipCooldownMs
+timeOkSat=cooldownSatMin==0 or na(satLastTime) or time-satLastTime>satCooldownMs
+dayOkDip= not dailyOnceDip or (na(dipLastTime) or dayofmonth(dipLastTime)!=dayofmonth(time))
+dayOkSat= not dailyOnceSat or (na(satLastTime) or dayofmonth(satLastTime)!=dayofmonth(time))
+
+// İYİLEŞTİRME: Güçlü kırılım ve aşırı uzanma kontrolleri ekle
+brkOk=f_brk_ok()
+ovxBlocked=f_ovx_check()
+
+allowDipFinal=dipGateOk and timeOkDip and dayOkDip and brkOk and not ovxBlocked
+// İYİLEŞTİRME: SAT bar kapanışı kontrolü (intraday erken tetikleme önleme)
+allowSatFinal=satGateOk and timeOkSat and dayOkSat and barstate.isconfirmed
+
+// İYİLEŞTİRME: SAT mesaj tipi belirleme
+satType="KAR AL"
+if sellSplit and not na(prRunup) and prRunup>=sellExitThreshold
+    satType:="ÇIKIŞ"
+
+if allowDipFinal
+    dipRecorded=f_recordSignal(true,close)
+    if dipRecorded
+        dipSignals+=1
+    lastDipSignalBar:=bar_index
+    dipLastTime:=time
+    lastDipPullbackPercent:=currentPullbackPercent
+    lastDipBreakoutId:=currBreakoutId
+    if showDipLabelsFinal
+        label.new(bar_index,low - atrValue*0.15,"AL",style=label.style_label_up,color=colorDeep,textcolor=color.white,size=size.small)
+    send_msg(telegramDipChatId,buildDipMsg())
+
+if allowSatFinal
+    satRecorded=f_recordSignal(false,close)
+    if satRecorded
+        satSignals+=1
+    lastSatSignalBar:=bar_index
+    satLastTime:=time
+    lastSatRunupPercent:=currentRunupPercent
+    lastSatBreakoutId:=currBreakoutId
+    if showSatLabelsFinal
+        lbl=satType=="ÇIKIŞ"?"ÇIKIŞ":"SAT"
+        label.new(bar_index,high + atrValue*0.15,lbl,style=label.style_label_down,color=colorSat,textcolor=color.white,size=size.small)
+    msg=buildSatMsg()
+    if sellSplit
+        msg:=str.replace_all(msg,"SAT / KAR AL",satType+" / "+(satType=="ÇIKIŞ"?"TREND KIRILDI":"RİSK YÜKSEK"))
+    send_msg(telegramSatChatId,msg)
+
+dipHitRate := dipSignals>0? dipSuccesses/dipSignals : 0.0
+satHitRate := satSignals>0? satSuccesses/satSignals : 0.0
+dipHitRateRecent := dipSignals>0? f_rollingRate(dipHistory,hitRateRecentWindow):na
+satHitRateRecent := satSignals>0? f_rollingRate(satHistory,hitRateRecentWindow):na
+
+// ===================== Tablo =====================
+if barstate.islast and showTable and not na(prPullback) and not na(prRunup)
+    var table tbl = table.new(position.top_right, 6, 8, frame_color=chart.fg_color, border_width=1, force_overlay=true)
+    tbl.cell(0, 0, "Metric",    bgcolor=color.new(color.gray,75), text_color=color.white)
+    tbl.cell(1, 0, "Current",   bgcolor=color.new(color.gray,75), text_color=color.white)
+    tbl.cell(2, 0, "Median",    bgcolor=color.new(color.gray,75), text_color=color.white)
+    tbl.cell(3, 0, "PercentRank",bgcolor=color.new(color.gray,75), text_color=color.white)
+    tbl.cell(4, 0, "P25",       bgcolor=color.new(color.gray,75), text_color=color.white)
+    tbl.cell(5, 0, "P75",       bgcolor=color.new(color.gray,75), text_color=color.white)
+
+    tbl.cell(0, 1, "Düzeltme%")
+    tbl.cell(1, 1, fmtPctValue(currentPullbackPercent))
+    tbl.cell(2, 1, fmtPctValue(pbMed))
+    tbl.cell(3, 1, fmtPctValue(prPullback))
+    tbl.cell(4, 1, fmtPctValue(pbP25))
+    tbl.cell(5, 1, fmtPctValue(pbP75))
+
+    tbl.cell(0, 2, runupMode=="FromBreakout" ? "Yükseliş Devamı%" : "Toplam Yükseliş%")
+    tbl.cell(1, 2, fmtPctValue(currentRunupPercent))
+    tbl.cell(2, 2, fmtPctValue(ruMed))
+    tbl.cell(3, 2, fmtPctValue(prRunup))
+    tbl.cell(4, 2, fmtPctValue(ruP25))
+    tbl.cell(5, 2, fmtPctValue(ruP75))
+
+    tbl.cell(0, 3, "Medyan DIP Hedefi")
+    tbl.cell(1, 3, fmtMintMsg(approxDipTarget))
+    tbl.cell(2, 3, "—")
+    tbl.cell(3, 3, "—")
+    tbl.cell(4, 3, "—")
+    tbl.cell(5, 3, "—")
+
+    tbl.cell(0, 4, "Medyan SAT Seviyesi")
+    tbl.cell(1, 4, fmtMintMsg(approxSatRetrace))
+    tbl.cell(2, 4, "—")
+    tbl.cell(3, 4, "—")
+    tbl.cell(4, 4, "—")
+    tbl.cell(5, 4, "—")
+
+    tbl.cell(0, 5, "HitRate DIP")
+    tbl.cell(1, 5, dipSignals > 0 ? f_fmtRate(dipHitRate) : "YOK")
+    tbl.cell(2, 5, "Son"+str.tostring(hitRateRecentWindow))
+    tbl.cell(3, 5, dipSignals > 0 and not na(dipHitRateRecent) ? f_fmtRate(dipHitRateRecent) : "—")
+    tbl.cell(4, 5, "Toplam")
+    tbl.cell(5, 5, str.tostring(dipSignals))
+
+    tbl.cell(0, 6, "HitRate SAT")
+    tbl.cell(1, 6, satSignals > 0 ? f_fmtRate(satHitRate) : "YOK")
+    tbl.cell(2, 6, "Son"+str.tostring(hitRateRecentWindow))
+    tbl.cell(3, 6, satSignals > 0 and not na(satHitRateRecent) ? f_fmtRate(satHitRateRecent) : "—")
+    tbl.cell(4, 6, "Toplam")
+    tbl.cell(5, 6, str.tostring(satSignals))
+
+    tbl.cell(0, 7, "Durum")
+    tbl.cell(1, 7, f_stat_bucket(prPullback))
+    tbl.cell(2, 7, f_stat_bucket(prRunup))
+    tbl.cell(3, 7, "ATR:"+fmtMintMsg(atrValue))
+    tbl.cell(4, 7, "HedefMod:"+hitRateTargetMode)
+    tbl.cell(5, 7, "StopATR:"+str.tostring(stopAtrMultiplier))
+
+// ===================== MTF (GERÇEK TF BAZLI) =====================
+mtfEffectiveCooldownMin = mtf_cooldown_min > 0 ? mtf_cooldown_min : math.max(cooldownDipMin, cooldownSatMin)
+mtfCooldownMs = mtfEffectiveCooldownMin * 60 * 1000
+
+f_rank_mtf(arr, v) =>
+    sz = array.size(arr)
+    if sz == 0
+        na
+    else
+        c = 0
+        for i = 0 to sz - 1
+            if array.get(arr, i) <= v
+                c += 1
+        c * 100.0 / sz
+
+// --- MTF state (TF başına)
+var float mtf_highest_1h        = na
+var float mtf_localLow_1h       = na
+var float mtf_lastBreak_1h      = na
+var int   mtf_barsSince_1h      = 1000000000
+var array<float> mtf_pullArr_1h = array.new_float()
+var array<float> mtf_runArr_1h  = array.new_float()
+var int mtf_lastDipTime_1h      = na
+var int mtf_lastSatTime_1h      = na
+
+var float mtf_highest_2h        = na
+var float mtf_localLow_2h       = na
+var float mtf_lastBreak_2h      = na
+var int   mtf_barsSince_2h      = 1000000000
+var array<float> mtf_pullArr_2h = array.new_float()
+var array<float> mtf_runArr_2h  = array.new_float()
+var int mtf_lastDipTime_2h      = na
+var int mtf_lastSatTime_2h      = na
+
+var float mtf_highest_4h        = na
+var float mtf_localLow_4h       = na
+var float mtf_lastBreak_4h      = na
+var int   mtf_barsSince_4h      = 1000000000
+var array<float> mtf_pullArr_4h = array.new_float()
+var array<float> mtf_runArr_4h  = array.new_float()
+var int mtf_lastDipTime_4h      = na
+var int mtf_lastSatTime_4h      = na
+
+var float mtf_highest_1d        = na
+var float mtf_localLow_1d       = na
+var float mtf_lastBreak_1d      = na
+var int   mtf_barsSince_1d      = 1000000000
+var array<float> mtf_pullArr_1d = array.new_float()
+var array<float> mtf_runArr_1d  = array.new_float()
+var int mtf_lastDipTime_1d      = na
+var int mtf_lastSatTime_1d      = na
+
+// Final flags (alertcondition / MC için)
+var bool mtf_dipFinal_1h = false
+var bool mtf_satFinal_1h = false
+var bool mtf_dipFinal_2h = false
+var bool mtf_satFinal_2h = false
+var bool mtf_dipFinal_4h = false
+var bool mtf_satFinal_4h = false
+var bool mtf_dipFinal_1d = false
+var bool mtf_satFinal_1d = false
+
+f_mtf_step(tf, tfLabel, useTf, dipAdj, satAdj,
+           ref_highest, ref_localLow, ref_lastBreak, ref_barsSince,
+           arrPull, arrRun,
+           lastDipTimeRef, lastSatTimeRef) =>
+
+    float highest    = ref_highest
+    float localLow   = ref_localLow
+    float lastBreak  = ref_lastBreak
+    int   barsSince  = ref_barsSince
+
+    int lastDipTime = lastDipTimeRef
+    int lastSatTime = lastSatTimeRef
+
+    float pullPerc = na
+    float runPerc  = na
+    float prPull   = na
+    float prRun    = na
+    bool  dipFinal = false
+    bool  satFinal = false
+
+    bool newBar = mtf_enable and useTf ? request.security(syminfo.tickerid, tf, barstate.isconfirmed) : false
+
+    if mtf_enable and useTf and newBar
+        float h_tf = request.security(syminfo.tickerid, tf, high)
+        float l_tf = request.security(syminfo.tickerid, tf, low)
+
+        barsSince += 1
+
+        if na(highest) or h_tf > highest
+            if not na(highest) and barsSince >= mtf_min_gap
+                lastBreak := h_tf
+                localLow  := l_tf
+                barsSince := 0
+            highest := h_tf
+
+        if not na(lastBreak)
+            if na(localLow) or l_tf < localLow
+                localLow := l_tf
+
+        rawPull = na(lastBreak) or na(localLow) ? na : (lastBreak - localLow) * 100 / lastBreak
+        rawRun  = na(localLow) or na(highest) or localLow == 0 ? na : (highest - localLow) * 100 / localLow
+
+        pullPerc := f_clamp_extreme(rawPull, 1000)
+        runPerc  := f_clamp_extreme(rawRun, 1000)
+
+        if not na(pullPerc)
+            array.push(arrPull, pullPerc)
+        if not na(runPerc)
+            array.push(arrRun, runPerc)
+
+        while array.size(arrPull) > mtfHistLimit
+            array.shift(arrPull)
+        while array.size(arrRun) > mtfHistLimit
+            array.shift(arrRun)
+
+        prPull := not na(pullPerc) ? f_rank_mtf(arrPull, pullPerc) : na
+        prRun  := not na(runPerc)  ? f_rank_mtf(arrRun, runPerc)  : na
+
+        dipThr     = dipPullbackRankThreshold + dipAdj
+        satThr     = sellRunupRankThreshold   + satAdj
+        strongDipT = strongDipPullbackRank    + dipAdj
+        strongSatT = strongSatRunupRank       + satAdj
+
+        dipCross = not na(prPull) and prPull >= dipThr and (na(prPull[1]) or prPull[1] < dipThr)
+        if dipRequireLowRunup and dipCross and not na(prRun)
+            dipCross := prRun <= dipMaxRunupRank
+
+        satCross = not na(prRun) and prRun >= satThr and (na(prRun[1]) or prRun[1] < satThr)
+
+        if satCross
+            if not na(runPerc) and runPerc < 20
+                satCross := false
+            if not na(pullPerc) and pullPerc > 35
+                satCross := false
+
+        // İYİLEŞTİRME: MTF SAT için ek kalite filtreleri (main TF ile tutarlı)
+        if satRequireMinPullback and satCross and not na(pullPerc)
+            satCross := pullPerc >= satMinPullbackPct
+        if satRequireTrendWeakness and satCross
+            ema9_mtf = ta.ema(close, 9)
+            ema21_mtf = ta.ema(close, 21)
+            rsi14_mtf = ta.rsi(close, 14)
+            trendWeak_mtf = (ema9_mtf < ema21_mtf) or (close < ema9_mtf and rsi14_mtf < 50)
+            satCross := trendWeak_mtf
+
+        if sellRequireShallowPullback and satCross and not na(prPull)
+            satCross := prPull <= sellShallowPullbackRank
+
+        dipTimeOk = na(lastDipTime) or time - lastDipTime > mtfCooldownMs
+        satTimeOk = na(lastSatTime) or time - lastSatTime > mtfCooldownMs
+
+        // İYİLEŞTİRME: MTF için de güçlü kırılım ve aşırı uzanma kontrolleri (isteğe bağlı)
+        mtfBrkOk = not mtf_use_filters or f_brk_ok()
+        mtfOvxBlocked = mtf_use_filters and f_ovx_check()
+
+        dipFinal := dipCross and dipTimeOk and mtfBrkOk and not mtfOvxBlocked
+        // İYİLEŞTİRME: MTF SAT bar kapanışı kontrolü
+        satFinal := satCross and satTimeOk and barstate.isconfirmed
+
+        if dipFinal
+            lastDipTime := time
+            linesDip = array.new_string()
+            array.push(linesDip, "MTF " + tfLabel + " DIP / AL FIRSATI (" + f_strength_dip(prPull, prRun, strongDipT, dipMaxRunupRank) + ")")
+            array.push(linesDip, "HISSE: " + syminfo.ticker + " | TF: " + tfLabel + " | FIYAT: " + fmtMintMsg(close))
+            array.push(linesDip, "")
+            array.push(linesDip, "DÜZELTME (MTF): " + fmtPctValue(pullPerc) + "  (" + f_stat_bucket(prPull) + ")")
+            array.push(linesDip, "TOPLAM YÜKSELİŞ (MTF, DİPTEN): " + fmtPctValue(runPerc) + "  (" + f_stat_bucket(prRun) + ")")
+            array.push(linesDip, "")
+            send_msg(telegramDipChatId, f_lineJoin(linesDip))
+            if mtf_show_labels
+                label.new(bar_index, low - atrValue * 0.1, "DIP-" + tfLabel, style=label.style_label_up, color=colorMtfDip, textcolor=color.white, size=size.tiny)
+
+        if satFinal
+            lastSatTime := time
+            linesSat = array.new_string()
+            array.push(linesSat, "MTF " + tfLabel + " SAT / KAR AL (" + f_strength_sat(prRun, prPull, strongSatT, sellShallowPullbackRank) + ")")
+            array.push(linesSat, "HISSE: " + syminfo.ticker + " | TF: " + tfLabel + " | FIYAT: " + fmtMintMsg(close))
+            array.push(linesSat, "")
+            array.push(linesSat, "TOPLAM YÜKSELİŞ (MTF, DİPTEN): " + fmtPctValue(runPerc) + "  (" + f_stat_bucket(prRun) + ")")
+            array.push(linesSat, "MEVCUT DÜZELTME (MTF): " + (na(pullPerc) ? "YOK / MINIMAL" : fmtPctValue(pullPerc)) + "  (" + f_stat_bucket(prPull) + ")")
+            array.push(linesSat, "")
+          //  send_msg(telegramSatChatId, f_lineJoin(linesSat)) KAR AL MESAJI GELMESIN DIYE MESUT
+            if mtf_show_labels
+                label.new(bar_index, high + atrValue * 0.1, "SAT-" + tfLabel, style=label.style_label_down, color=colorMtfSat, textcolor=color.white, size=size.tiny)
+
+    [highest, localLow, lastBreak, barsSince, lastDipTime, lastSatTime, dipFinal, satFinal]
+
+// 1H
+[h1, l1, b1, bs1, d1, s1, df1, sf1] = f_mtf_step("60", "1H", mtf_use_1h, mtf_dip_rank_adj_1h, mtf_sat_rank_adj_1h,
+               mtf_highest_1h, mtf_localLow_1h, mtf_lastBreak_1h, mtf_barsSince_1h,
+               mtf_pullArr_1h, mtf_runArr_1h,
+               mtf_lastDipTime_1h, mtf_lastSatTime_1h)
+mtf_highest_1h    := h1
+mtf_localLow_1h   := l1
+mtf_lastBreak_1h  := b1
+mtf_barsSince_1h  := bs1
+mtf_lastDipTime_1h:= d1
+mtf_lastSatTime_1h:= s1
+mtf_dipFinal_1h   := df1
+mtf_satFinal_1h   := sf1
+
+// 2H
+[h2, l2, b2, bs2, d2, s2, df2, sf2] = f_mtf_step("120", "2H", mtf_use_2h, mtf_dip_rank_adj_2h, mtf_sat_rank_adj_2h,
+               mtf_highest_2h, mtf_localLow_2h, mtf_lastBreak_2h, mtf_barsSince_2h,
+               mtf_pullArr_2h, mtf_runArr_2h,
+               mtf_lastDipTime_2h, mtf_lastSatTime_2h)
+mtf_highest_2h    := h2
+mtf_localLow_2h   := l2
+mtf_lastBreak_2h  := b2
+mtf_barsSince_2h  := bs2
+mtf_lastDipTime_2h:= d2
+mtf_lastSatTime_2h:= s2
+mtf_dipFinal_2h   := df2
+mtf_satFinal_2h   := sf2
+
+// 4H
+[h4, l4, b4, bs4, d4, s4, df4, sf4] = f_mtf_step("240", "4H", mtf_use_4h, mtf_dip_rank_adj_4h, mtf_sat_rank_adj_4h,
+               mtf_highest_4h, mtf_localLow_4h, mtf_lastBreak_4h, mtf_barsSince_4h,
+               mtf_pullArr_4h, mtf_runArr_4h,
+               mtf_lastDipTime_4h, mtf_lastSatTime_4h)
+mtf_highest_4h    := h4
+mtf_localLow_4h   := l4
+mtf_lastBreak_4h  := b4
+mtf_barsSince_4h  := bs4
+mtf_lastDipTime_4h:= d4
+mtf_lastSatTime_4h:= s4
+mtf_dipFinal_4h   := df4
+mtf_satFinal_4h   := sf4
+
+// 1D
+[hD, lD, bD, bsD, dD, sD, dfD, sfD] = f_mtf_step("D", "1D", mtf_use_1d, mtf_dip_rank_adj_1d, mtf_sat_rank_adj_1d,
+               mtf_highest_1d, mtf_localLow_1d, mtf_lastBreak_1d, mtf_barsSince_1d,
+               mtf_pullArr_1d, mtf_runArr_1d,
+               mtf_lastDipTime_1d, mtf_lastSatTime_1d)
+mtf_highest_1d    := hD
+mtf_localLow_1d   := lD
+mtf_lastBreak_1d  := bD
+mtf_barsSince_1d  := bsD
+mtf_lastDipTime_1d:= dD
+mtf_lastSatTime_1d:= sD
+mtf_dipFinal_1d   := dfD
+mtf_satFinal_1d   := sfD
+
+// ===================== MultiConfirm =====================
+var int mc_lastTime = na
+mcCooldownMs = multiConfirmCooldownMin * 60 * 1000
+f_mc_time_ok() => multiConfirmCooldownMin == 0 or na(mc_lastTime) or time - mc_lastTime > mcCooldownMs
+f_mc_chat(isDip) => multiConfirmChatId != "" ? multiConfirmChatId : (isDip ? telegramDipChatId : telegramSatChatId)
+
+mc_dipCondition() =>
+    if not multiConfirmEnable
+        false
+    else
+        mode = multiConfirmMode
+        cond = false
+        mtfAny = (mtf_dipFinal_1h or mtf_dipFinal_2h or mtf_dipFinal_4h or mtf_dipFinal_1d)
+
+        if mode == "Any2SameSide"
+            cond := allowDipFinal and mtfAny
+        else if mode == "StrongAndMTF"
+            strongAna = f_strength_dip(prPullback, prRunup, strongDipPullbackRank, dipMaxRunupRank) == "KESİN AL"
+            cond := strongAna and mtfAny
+        else if mode == "All3MTF"
+            cond := allowDipFinal and (mtf_dipFinal_1h and mtf_dipFinal_4h and mtf_dipFinal_1d)
+
+        if cond and multiConfirmMinPullDelta > 0 and not na(lastDipPullbackPercent) and not na(currentPullbackPercent)
+            cond := (currentPullbackPercent - lastDipPullbackPercent) >= multiConfirmMinPullDelta
+        cond
+
+mc_satCondition() =>
+    if not multiConfirmEnable
+        false
+    else
+        mode = multiConfirmMode
+        cond = false
+        mtfAny = (mtf_satFinal_1h or mtf_satFinal_2h or mtf_satFinal_4h or mtf_satFinal_1d)
+
+        if mode == "Any2SameSide"
+            cond := allowSatFinal and mtfAny
+        else if mode == "StrongAndMTF"
+            strongAna = f_strength_sat(prRunup, prPullback, strongSatRunupRank, sellShallowPullbackRank) == "KESİN SAT"
+            cond := strongAna and mtfAny
+        else if mode == "All3MTF"
+            cond := allowSatFinal and (mtf_satFinal_1h and mtf_satFinal_4h and mtf_satFinal_1d)
+
+        if cond and multiConfirmMinRunupDelta > 0 and not na(lastSatRunupPercent) and not na(currentRunupPercent)
+            cond := (currentRunupPercent - lastSatRunupPercent) >= multiConfirmMinRunupDelta
+        cond
+
+mc_dip = mc_dipCondition() and f_mc_time_ok()
+mc_sat = mc_satCondition() and f_mc_time_ok()
+
+f_mc_msg(isDip) =>
+    side = isDip ? "AL" : "SAT"
+    strength = isDip ? f_strength_dip(prPullback, prRunup, strongDipPullbackRank, dipMaxRunupRank) : f_strength_sat(prRunup, prPullback, strongSatRunupRank, sellShallowPullbackRank)
+
+    lines = array.new_string()
+    array.push(lines, "MC " + side + " (" + strength + ")")
+    array.push(lines, "HISSE: " + syminfo.ticker + " | FIYAT: " + fmtMintMsg(close))
+    array.push(lines, "")
+    array.push(lines, "ANA TF DÜZELTME: " + fmtPctValue(currentPullbackPercent) + " (" + f_stat_bucket(prPullback) + ")")
+    array.push(lines, "ANA TF YÜKSELİŞ: " + fmtPctValue(currentRunupPercent) + " (" + f_stat_bucket(prRunup) + ")")
+    array.push(lines, "")
+    f_lineJoin(lines)
+
+if mc_dip
+    send_msg(f_mc_chat(true), f_mc_msg(true))
+    mc_lastTime := time
+
+if mc_sat
+    send_msg(f_mc_chat(false), f_mc_msg(false))
+    mc_lastTime := time
+
+// ===================== Alerts (Pullback AS-IS) =====================
+alertcondition(allowDipFinal,     title="DIP AL Sinyali (AnaTF)", message="DIP AL")
+alertcondition(allowSatFinal,     title="YÜKSELDİ SAT Sinyali (AnaTF)", message="SAT")
+alertcondition(mtf_dipFinal_1h,   title="MTF 1H DIP", message="MTF 1H DIP")
+//alertcondition(mtf_satFinal_1h,   title="MTF 1H SAT", message="MTF 1H SAT")
+alertcondition(mtf_dipFinal_2h,   title="MTF 2H DIP", message="MTF 2H DIP")
+//alertcondition(mtf_satFinal_2h,   title="MTF 2H SAT", message="MTF 2H SAT")
+alertcondition(mtf_dipFinal_4h,   title="MTF 4H DIP", message="MTF 4H DIP")
+//alertcondition(mtf_satFinal_4h,   title="MTF 4H SAT", message="MTF 4H SAT") Tüm 4 satir SAt mesajlari gelmesin diye kapattim mesut
+alertcondition(mtf_dipFinal_1d,   title="MTF 1D DIP", message="MTF 1D DIP")  
+//alertcondition(mtf_satFinal_1d,   title="MTF 1D SAT", message="MTF 1D SAT")
+alertcondition(mc_dip,            title="MultiConfirm DIP", message="MC-DIP")
+alertcondition(mc_sat,            title="MultiConfirm SAT", message="MC-SAT")
+
+////////////////////////////////////////////////////////////////////////////////
+// ===================== 2) E2 FORMASYONLAR (EK MODÜL) ===================== //
+////////////////////////////////////////////////////////////////////////////////
+
+// ---- E2 Inputs (üstteki send_msg ve fmtMintMsg kullanılır)
+grpE2Main = "E2 • Ana Kontroller"
+e2_enable = input.bool(true, "E2 aktif", group=grpE2Main)
+e2_use_alerts = input.bool(true, "E2 Telegram Gönder", group=grpE2Main)
+e2_min_target_pct = input.float(3.0, "E2 Minimum hedef (%)", minval=0.5, step=0.5, group=grpE2Main)
+e2_cooldown_bars = input.int(5, "E2 Cooldown (bar)", minval=0, group=grpE2Main)
+e2_simple_strength_filters = input.bool(true, "E2 Donchian/GC güç filtresi", group=grpE2Main)
+e2_textbook_mode = input.bool(false, "E2 Textbook", group=grpE2Main)
+
+// Quality Gate
+grpE2Q="E2 • Kalite Kapısı"
+e2_quality_gate_on      = input.bool(true,  "Kalite kapısı", group=grpE2Q)
+e2_q_trend_filter_on    = input.bool(true,  "Trend filtresi (SMA50/200)", group=grpE2Q)
+e2_q_rsi_filter_on      = input.bool(true,  "RSI filtresi", group=grpE2Q)
+e2_q_vol_filter_on      = input.bool(true,  "Hacim filtresi", group=grpE2Q)
+e2_q_atr_body_filter_on = input.bool(true,  "ATR-body filtresi", group=grpE2Q)
+e2_q_min_atr_body_k     = input.float(0.18, "Min breakout gücü (ATR x)", step=0.01, group=grpE2Q)
+e2_q_min_vol_mult       = input.float(1.3,  "Min hacim katı", step=0.1, group=grpE2Q)
+e2_q_min_impulse_pct    = input.float(0.035,"Min momentum (10 bar %)", step=0.005, group=grpE2Q)
+
+// Patterns
+grpE2P="E2 • Formasyonlar"
+e2_enable_tobo     = input.bool(true, "TOBO (AL)", group=grpE2P)
+e2_enable_hs       = input.bool(true, "H&S (SAT)", group=grpE2P)
+e2_enable_cup      = input.bool(true, "Fincan-Kulp (AL)", group=grpE2P)
+e2_enable_bullflag = input.bool(true, "Bull Flag (AL)", group=grpE2P)
+e2_enable_diamond  = input.bool(true, "Diamond (AL/SAT)", group=grpE2P)
+e2_enable_gx       = input.bool(true, "Golden Cross (AL)", group=grpE2P)
+e2_enable_don      = input.bool(true, "Donchian (AL/SAT)", group=grpE2P)
+
+// Filters
+grpE2F="E2 • Göstergeler"
+e2_rsi_length   = input.int(14, "RSI", group=grpE2F)
+e2_vol_len      = input.int(20, "VolMA", group=grpE2F)
+e2_volume_mult  = input.float(1.2, "VolMA katı", step=0.1, group=grpE2F)
+e2_atr_len      = input.int(14, "ATR", group=grpE2F)
+e2_break_atr_k  = input.float(0.10, "Breakout > ATR x", step=0.05, group=grpE2F)
+
+// Params
+grpTOBO="E2 • TOBO"
+tobo_search = input.int(80,"Arama",group=grpTOBO)
+tobo_min_gap = input.int(5,"Min gap",group=grpTOBO)
+tobo_max_gap = input.int(25,"Max gap",group=grpTOBO)
+tobo_shoulder_sym = input.float(0.15,"Simetri",group=grpTOBO)
+tobo_sh_head_min  = input.float(0.35,"Oran min",group=grpTOBO)
+tobo_sh_head_max  = input.float(0.80,"Oran max",group=grpTOBO)
+rsi_lim_tobo = input.int(40,"Başta RSI <",group=grpTOBO)
+rsi_brk_tobo = input.int(55,"Kırılım RSI >",group=grpTOBO)
+
+grpHS="E2 • H&S"
+hs_search = input.int(80,"Arama",group=grpHS)
+hs_min_gap = input.int(5,"Min gap",group=grpHS)
+hs_max_gap = input.int(25,"Max gap",group=grpHS)
+hs_shoulder_sym = input.float(0.15,"Simetri",group=grpHS)
+hs_sh_head_min  = input.float(0.35,"Oran min",group=grpHS)
+hs_sh_head_max  = input.float(0.80,"Oran max",group=grpHS)
+rsi_lim_hs = input.int(60,"Başta RSI >",group=grpHS)
+rsi_brk_hs = input.int(45,"Kırılım RSI <",group=grpHS)
+
+grpCUP="E2 • Fincan-Kulp"
+cup_search = input.int(120,"Arama",group=grpCUP)
+cup_min_len = input.int(15,"Min bar",group=grpCUP)
+cup_max_len = input.int(60,"Max bar",group=grpCUP)
+cup_symmetry = input.float(0.13,"Simetri",group=grpCUP)
+handle_max = input.int(15,"Kulp max",group=grpCUP)
+handle_depth_min = input.float(0.10,"Kulp derin min",group=grpCUP)
+handle_depth_max = input.float(0.40,"Kulp derin max",group=grpCUP)
+rsi_brk_cup = input.int(55,"Kırılım RSI >",group=grpCUP)
+
+grpFLAG="E2 • Bull Flag"
+flag_impulse_len = input.int(10,"Direk len",group=grpFLAG)
+flag_impulse_min = input.float(0.06,"Direk min %",step=0.01,group=grpFLAG)
+flag_min_len = input.int(8,"Bayrak min",group=grpFLAG)
+flag_max_len = input.int(25,"Bayrak max",group=grpFLAG)
+flag_vol_mult = input.float(1.5,"Vol kat",step=0.1,group=grpFLAG)
+
+grpDIA="E2 • Diamond"
+dia_search = input.int(80,"Arama",group=grpDIA)
+dia_min_expand = input.float(0.15,"Expand min",step=0.05,group=grpDIA)
+
+grpGX="E2 • GX/Don"
+gx_fast_len = input.int(50,"SMA fast",group=grpGX)
+gx_slow_len = input.int(200,"SMA slow",group=grpGX)
+don_len = input.int(20,"Don len",group=grpGX)
+
+// E2 global buffer capacity limit (prevents buffer overflow on low-history symbols)
+// E2 indicators (main tf)
+e2_rsi      = ta.rsi(close, e2_rsi_length)
+e2_volma    = ta.sma(volume, e2_vol_len)
+e2_atr      = ta.atr(e2_atr_len)
+e2_sma_fast = ta.sma(close, gx_fast_len)
+e2_sma_slow = ta.sma(close, gx_slow_len)
+e2_sma50    = ta.sma(close, 50)
+e2_sma200   = ta.sma(close, 200)
+e2_mom10    = (close - close[10]) / close[10]
+
+// helpers
+e2_fmt(x) => na(x) ? "-" : str.tostring(x, format.mintick)
+
+// quality gates (main tf)
+e2_q_tr_buy  = not e2_q_trend_filter_on or (e2_sma50 > e2_sma200 and ta.rising(e2_sma50, 10))
+e2_q_tr_sell = not e2_q_trend_filter_on or (e2_sma50 < e2_sma200 and ta.falling(e2_sma50, 10))
+e2_q_rsi_buy = not e2_q_rsi_filter_on or e2_rsi >= 52
+e2_q_rsi_sell= not e2_q_rsi_filter_on or e2_rsi <= 48
+e2_q_vol_ok  = not e2_q_vol_filter_on or (volume > e2_volma * e2_q_min_vol_mult)
+e2_q_mom_ok  = math.abs(e2_mom10) >= e2_q_min_impulse_pct
+
+e2_q_atr_body_ok(level, isBuy) =>
+    not e2_q_atr_body_filter_on or (isBuy ? (close - level) > e2_atr * e2_q_min_atr_body_k : (level - close) > e2_atr * e2_q_min_atr_body_k)
+
+e2_gate_buy(level) =>
+    not e2_quality_gate_on ? true : (e2_q_tr_buy and e2_q_rsi_buy and e2_q_vol_ok and e2_q_mom_ok and e2_q_atr_body_ok(level, true))
+e2_gate_sell(level) =>
+    not e2_quality_gate_on ? true : (e2_q_tr_sell and e2_q_rsi_sell and e2_q_vol_ok and e2_q_mom_ok and e2_q_atr_body_ok(level, false))
+e2_gate_buy_early(level) =>
+    not e2_quality_gate_on ? true : ((not e2_q_rsi_filter_on or e2_rsi >= 50) and e2_q_vol_ok and e2_q_mom_ok and e2_q_atr_body_ok(level, true))
+
+// daily memory
+var e2_today = map.new<string, bool>()
+if ta.change(time("D")) != 0
+    map.clear(e2_today)
+e2_has_today(k) => map.get(e2_today, k) == true
+e2_mark_today(k) => map.put(e2_today, k, true)
+
+// cooldown
+var int e2_lastSignalBar_main = na
+e2_can_signal_main() => na(e2_lastSignalBar_main) or (bar_index - e2_lastSignalBar_main > e2_cooldown_bars)
+
+// ---- E2 main eval (returns buyMsg, sellMsg, buyFlag, sellFlag)
+f_e2_eval_main() =>
+    string buyMsg = ""
+    string sellMsg = ""
+    bool buyFlag = false
+    bool sellFlag = false
+    
+    // NOTE: Buffer capacity constant (14) protects against historical buffer overflow
+    // on symbols with limited history (e.g. new IPOs, delisted stocks)
+
+    // TOBO
+    if e2_enable_tobo and bar_index > (tobo_search + tobo_min_gap + 2)
+        float neck = na
+        float b = na
+        float rs = na
+
+        int start_t = math.min(tobo_max_gap, tobo_search)
+        for i = start_t to tobo_search
+            int idx_b = i
+            int idx_a = i + tobo_min_gap
+            int idx_c = i - tobo_min_gap
+            if idx_c >= 0 and idx_a < bar_index and (idx_a - idx_c) <= tobo_max_gap
+                float a = low[idx_a]
+                float bb = low[idx_b]
+                float c = low[idx_c]
+                bool sim = math.abs(a - c) / math.max(a, c) < tobo_shoulder_sym
+                bool head = bb < a and bb < c
+                float neck_ = (high[idx_a] + high[idx_c]) / 2.0
+                float hd = neck_ - bb
+                float lsd = neck_ - a
+                float rsd = neck_ - c
+                bool sh_ok = hd > 0 and lsd > 0 and rsd > 0
+                float ratio = ((lsd + rsd) / 2.0) / (hd + 1e-5)
+                bool ratio_ok = ratio >= tobo_sh_head_min and ratio <= tobo_sh_head_max
+                bool rsi_ok = e2_rsi[idx_b] < rsi_lim_tobo
+                bool strict_ok = not e2_textbook_mode or (e2_sma50 < e2_sma200 and ta.falling(e2_sma50, 10))
+                if strict_ok and head and sim and sh_ok and ratio_ok and rsi_ok
+                    neck := neck_
+                    b := bb
+                    rs := c
+                    break
+
+        bool brk = not na(neck) and ta.crossover(close, neck) and barstate.isconfirmed
+        bool strong = brk and (not e2_textbook_mode or (volume > e2_volma * e2_volume_mult and e2_rsi > rsi_brk_tobo)) and e2_gate_buy_early(neck)
+
+        if strong and e2_can_signal_main() and not e2_has_today("TOBO")
+            float t2 = neck + (neck - b)
+            if (t2 - close) / close * 100 >= e2_min_target_pct
+                float sl = math.min(rs, b)
+                buyMsg += "• TOBO (T2: " + e2_fmt(t2) + ", SL: " + e2_fmt(sl) + ")\n"
+                buyFlag := true
+                e2_mark_today("TOBO")
+
+    // H&S
+    if e2_enable_hs and bar_index > (hs_search + hs_min_gap + 2)
+        float neck = na
+        float b = na
+        float rs = na
+
+        int start_h = math.min(hs_max_gap, hs_search)
+        for i = start_h to hs_search
+            int idx_b = i
+            int idx_a = i + hs_min_gap
+            int idx_c = i - hs_min_gap
+            if idx_c >= 0 and idx_a < bar_index and (idx_a - idx_c) <= hs_max_gap
+                float a = high[idx_a]
+                float bb = high[idx_b]
+                float c = high[idx_c]
+                bool sim = math.abs(a - c) / math.max(a, c) < hs_shoulder_sym
+                bool head = bb > a and bb > c
+                float neck_ = (low[idx_a] + low[idx_c]) / 2.0
+                float hh = bb - neck_
+                float lh = a - neck_
+                float rh = c - neck_
+                bool sh_ok = hh > 0 and lh > 0 and rh > 0
+                float ratio = ((lh + rh) / 2.0) / (hh + 1e-5)
+                bool ratio_ok = ratio >= hs_sh_head_min and ratio <= hs_sh_head_max
+                bool rsi_ok = e2_rsi[idx_b] > rsi_lim_hs
+                bool strict_ok = not e2_textbook_mode or (e2_sma50 > e2_sma200 and ta.rising(e2_sma50, 10))
+                if strict_ok and head and sim and sh_ok and ratio_ok and rsi_ok
+                    neck := neck_
+                    b := bb
+                    rs := c
+                    break
+
+        bool brk = not na(neck) and ta.crossunder(close, neck) and barstate.isconfirmed
+        bool strong = brk and (not e2_textbook_mode or (volume > e2_volma * e2_volume_mult and e2_rsi < rsi_brk_hs)) and e2_gate_sell(neck)
+
+        if strong and e2_can_signal_main() and not e2_has_today("HS")
+            float t2 = neck - (b - neck)
+            if (close - t2) / close * 100 >= e2_min_target_pct
+                float sl = math.max(rs, b)
+                sellMsg += "• H&S (T2: " + e2_fmt(t2) + ", SL: " + e2_fmt(sl) + ")\n"
+                sellFlag := true
+                e2_mark_today("HS")
+
+    // CUP
+    if e2_enable_cup and bar_index > (cup_search + cup_min_len + 5)
+        float neck = na
+        float bottom = na
+        float hlow = na
+
+        int start_c = math.min(cup_min_len, cup_search)
+        int end_c = math.min(cup_max_len, cup_search)
+
+        for i = start_c to end_c
+            float left = high[i]
+            float right = high[0]
+            float bottom_ = math.min(low[i], ta.lowest(low, i))
+            float ch = math.max(left, right) - bottom_
+            bool sym = math.abs(left - right) / math.max(left, right) < cup_symmetry
+            bool dip = bottom_ < left and bottom_ < right
+            bool deep = ch > (math.max(left, right) * 0.025)
+            bool strict_ok = not e2_textbook_mode or (e2_sma50 > e2_sma200 and ta.rising(e2_sma50, 10))
+
+            if strict_ok and sym and dip and deep
+                float neck_cur = math.min(left, right)
+                for j = 3 to handle_max
+                    float hlow_ = ta.lowest(low, j)
+                    float rr = (neck_cur - hlow_) / (ch + 1e-5)
+                    if rr >= handle_depth_min and rr <= handle_depth_max
+                        neck := neck_cur
+                        bottom := bottom_
+                        hlow := hlow_
+                        break
+                if not na(neck)
+                    break
+
+        bool brk = not na(neck) and ta.crossover(close, neck) and barstate.isconfirmed
+        bool strong = brk and (not e2_textbook_mode or (volume > e2_volma * e2_volume_mult and e2_rsi > rsi_brk_cup)) and e2_gate_buy(neck)
+
+        if strong and e2_can_signal_main() and not e2_has_today("CUP")
+            float t2 = neck + (neck - bottom)
+            if (t2 - close) / close * 100 >= e2_min_target_pct
+                float sl = math.min(hlow, neck - e2_atr * 2)
+                buyMsg += "• Fincan-Kulp (T2: " + e2_fmt(t2) + ", SL: " + e2_fmt(sl) + ")\n"
+                buyFlag := true
+                e2_mark_today("CUP")
+
+    // BULLFLAG
+    if e2_enable_bullflag and bar_index > (flag_max_len + flag_impulse_len + 5)
+        float ema5 = ta.ema(close, 5)
+        for m = flag_min_len to flag_max_len
+            if m + flag_impulse_len < bar_index
+                float impulse = (close[m] - close[m + flag_impulse_len]) / close[m + flag_impulse_len]
+                bool slope_neg = ta.falling(ema5, math.max(3, int(m / 3)))
+                float upper = ta.highest(high, m)
+                float lower = ta.lowest(low,  m)
+                bool brk = ta.crossover(close, upper) and barstate.isconfirmed
+
+                bool vol_ok_flag = true
+                if e2_textbook_mode
+                    vol_ok_flag := volume > e2_volma * flag_vol_mult
+
+                bool strong = brk and impulse >= flag_impulse_min and slope_neg and vol_ok_flag and e2_gate_buy(upper)
+
+                if strong and e2_can_signal_main() and not e2_has_today("BULLFLAG")
+                    float pole = close[m] - close[m + flag_impulse_len]
+                    float t2 = close + pole
+                    if (t2 - close) / close * 100 >= e2_min_target_pct
+                        float sl = lower - e2_atr * 0.5
+                        buyMsg += "• Bull Flag (T2: " + e2_fmt(t2) + ", SL: " + e2_fmt(sl) + ")\n"
+                        buyFlag := true
+                        e2_mark_today("BULLFLAG")
+                        break
+
+    // DIAMOND
+    if e2_enable_diamond and bar_index > (dia_search + 10)
+        int half = math.max(3, int(math.floor(dia_search / 2)))
+        float w_half = ta.highest(high, half) - ta.lowest(low, half)
+        float w_full = ta.highest(high, dia_search) - ta.lowest(low, dia_search)
+        bool contracting = w_half < w_full
+        bool expanded    = w_full > w_half * (1.0 + dia_min_expand)
+
+        if expanded and contracting
+            int band = math.max(3, int(math.floor(dia_search / 3)))
+            float upb = ta.highest(high, band)
+            float lwb = ta.lowest(low,  band)
+            bool brku = close > upb and close[1] <= upb and barstate.isconfirmed
+            bool brkd = close < lwb and close[1] >= lwb and barstate.isconfirmed
+            float rng = upb - lwb
+
+            bool vol_ok_dia = true
+            if e2_textbook_mode
+                vol_ok_dia := volume > e2_volma * e2_volume_mult
+
+            if brku and vol_ok_dia and e2_gate_buy(upb) and e2_can_signal_main() and not e2_has_today("DIAMOND_UP")
+                float t2 = close + rng
+                if (t2 - close) / close * 100 >= e2_min_target_pct
+                    float sl = upb - e2_atr
+                    buyMsg += "• Diamond UP (T2: " + e2_fmt(t2) + ", SL: " + e2_fmt(sl) + ")\n"
+                    buyFlag := true
+                    e2_mark_today("DIAMOND_UP")
+
+            if brkd and vol_ok_dia and e2_gate_sell(lwb) and e2_can_signal_main() and not e2_has_today("DIAMOND_DN")
+                float t2 = close - rng
+                if (close - t2) / close * 100 >= e2_min_target_pct
+                    float sl = lwb + e2_atr
+                    sellMsg += "• Diamond DOWN (T2: " + e2_fmt(t2) + ", SL: " + e2_fmt(sl) + ")\n"
+                    sellFlag := true
+                    e2_mark_today("DIAMOND_DN")
+
+    // GX
+    if e2_enable_gx and e2_can_signal_main() and not e2_has_today("GX")
+        bool gc = ta.crossover(e2_sma_fast, e2_sma_slow) and close > e2_sma_slow and volume > e2_volma and barstate.isconfirmed
+
+        bool gc_ok = true
+        if e2_simple_strength_filters or e2_textbook_mode
+            gc_ok := (math.abs(close - open) > e2_atr * e2_break_atr_k) and (volume > e2_volma * e2_volume_mult)
+
+        bool gate_ok = not e2_quality_gate_on ? true : (e2_q_tr_buy and e2_q_vol_ok and e2_q_mom_ok)
+
+        if gc and gc_ok and gate_ok
+            buyMsg += "• Golden Cross\n"
+            buyFlag := true
+            e2_mark_today("GX")
+
+    // DONCHIAN (NO ternary)
+    if e2_enable_don
+        float up = ta.highest(high, don_len)
+        float dn = ta.lowest(low,  don_len)
+        bool upBr = close > up and close[1] <= up and barstate.isconfirmed
+        bool dnBr = close < dn and close[1] >= dn and barstate.isconfirmed
+
+        bool up_ok = true
+        bool dn_ok = true
+
+        if e2_textbook_mode
+            up_ok := ((close - up) > e2_atr * e2_break_atr_k) and (volume > e2_volma * e2_volume_mult)
+            dn_ok := ((dn - close) > e2_atr * e2_break_atr_k) and (volume > e2_volma * e2_volume_mult)
+        else
+            if e2_simple_strength_filters
+                up_ok := ((close - up) > e2_atr * e2_break_atr_k) and (volume > e2_volma * e2_volume_mult)
+                dn_ok := ((dn - close) > e2_atr * e2_break_atr_k) and (volume > e2_volma * e2_volume_mult)
+
+        if upBr and up_ok and e2_gate_buy(up) and e2_can_signal_main() and not e2_has_today("DON_UP")
+            buyMsg += "• Donchian UP\n"
+            buyFlag := true
+            e2_mark_today("DON_UP")
+
+        if dnBr and dn_ok and e2_gate_sell(dn) and e2_can_signal_main() and not e2_has_today("DON_DN")
+            sellMsg += "• Donchian DOWN\n"
+            sellFlag := true
+            e2_mark_today("DON_DN")
+
+    [buyMsg, sellMsg, buyFlag, sellFlag]
+
+// MTF close flags for E2
+e2_is60Close  = request.security(syminfo.tickerid, "60",  barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
+e2_is240Close = request.security(syminfo.tickerid, "240", barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
+e2_is1dClose  = request.security(syminfo.tickerid, "D",   barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
+
+// E2 MTF eval (messages only)
+f_e2_eval_mtf_msgs() =>
+    // run same logic but without daily memory/cooldown (since MTF is gated by close flags)
+    // NOTE: For simplicity, reuse f_e2_eval_main result in that TF context.
+    [b, s, _, __] = f_e2_eval_main()
+    [b, s]
+
+// E2 MTF results
+[e2_b60, e2_s60]   = request.security(syminfo.tickerid, "60",  f_e2_eval_mtf_msgs(), barmerge.gaps_off, barmerge.lookahead_off)
+[e2_b240, e2_s240] = request.security(syminfo.tickerid, "240", f_e2_eval_mtf_msgs(), barmerge.gaps_off, barmerge.lookahead_off)
+[e2_bd, e2_sd]     = request.security(syminfo.tickerid, "D",   f_e2_eval_mtf_msgs(), barmerge.gaps_off, barmerge.lookahead_off)
+
+// E2 main TF results
+[e2_buy_main, e2_sell_main, e2_buyFlag_main, e2_sellFlag_main] = f_e2_eval_main()
+
+// Send E2 main (separate from pullback)
+if e2_enable and e2_use_alerts and (str.length(e2_buy_main) > 0 or str.length(e2_sell_main) > 0) and e2_can_signal_main()
+    if str.length(e2_buy_main) > 0
+        txt = "E2 FORMASYONLAR ("+timeframe.period+")\nHISSE: "+syminfo.ticker+" | FIYAT: "+fmtMintMsg(close)+"\n"+e2_buy_main
+        send_msg(telegramDipChatId, txt)
+    if str.length(e2_sell_main) > 0
+        txt = "E2 FORMASYONLAR ("+timeframe.period+")\nHISSE: "+syminfo.ticker+" | FIYAT: "+fmtMintMsg(close)+"\n"+e2_sell_main
+        send_msg(telegramSatChatId, txt)
+    e2_lastSignalBar_main := bar_index
+
+// Send E2 MTF only on TF close (separate)
+if e2_enable and e2_use_alerts
+    if e2_is60Close and str.length(e2_b60) > 0
+        send_msg(telegramDipChatId, "E2 MTF (1H)\nHISSE: "+syminfo.ticker+" | FIYAT: "+fmtMintMsg(close)+"\n"+e2_b60)
+    if e2_is60Close and str.length(e2_s60) > 0
+        send_msg(telegramSatChatId, "E2 MTF (1H)\nHISSE: "+syminfo.ticker+" | FIYAT: "+fmtMintMsg(close)+"\n"+e2_s60)
+
+    if e2_is240Close and str.length(e2_b240) > 0
+        send_msg(telegramDipChatId, "E2 MTF (4H)\nHISSE: "+syminfo.ticker+" | FIYAT: "+fmtMintMsg(close)+"\n"+e2_b240)
+    if e2_is240Close and str.length(e2_s240) > 0
+        send_msg(telegramSatChatId, "E2 MTF (4H)\nHISSE: "+syminfo.ticker+" | FIYAT: "+fmtMintMsg(close)+"\n"+e2_s240)
+
+    if e2_is1dClose and str.length(e2_bd) > 0
+        send_msg(telegramDipChatId, "E2 MTF (1D)\nHISSE: "+syminfo.ticker+" | FIYAT: "+fmtMintMsg(close)+"\n"+e2_bd)
+    if e2_is1dClose and str.length(e2_sd) > 0
+        send_msg(telegramSatChatId, "E2 MTF (1D)\nHISSE: "+syminfo.ticker+" | FIYAT: "+fmtMintMsg(close)+"\n"+e2_sd)
+
+// E2 alertconditions
+alertcondition(e2_buyFlag_main,  title="E2: AL (AnaTF)",  message="E2 BUY")
+alertcondition(e2_sellFlag_main, title="E2: SAT (AnaTF)", message="E2 SELL")
+
+// =====================================================================
+// ===================== 3) DIP+BOOST (MASTER) — AL ONLY =================
+// Ayrı analiz, ayrı chat. Pullback/E2 aynen kalır.
+// DIP+BOOST = SQZ Release + Dip/Drawdown + Stabilizasyon + Hacim + Min% (dinamik)
+// EK FILTRE (opsiyonel): Pullback ana TF DIP şartı (allowDipFinal)
+// Timeframes: 4H / 1D / 1W (kapanışta tetiklenir).
+// HIBRIT: 4H için WATCH (intrabar) + CONFIRMED (bar close)
+// FIX: Fonksiyon içinde streak/self-referans YOK. sqzOn süresi onBars[1] ile ölçülür.
+// =====================================================================
+
+// ----------------- Inputs
+grpDB = "DIP+BOOST • Master (AL) [4H/1D/1W]"
+db_enable = input.bool(true, "DIP+BOOST aktif", group=grpDB)
+db_chat_id = input.string("-5079043570", "DIP+BOOST chat_id (ayrı grup)", group=grpDB)
+
+// Pullback filtresi (chart TF) — çok anlamsız mesaj gelirse true yap
+db_require_pullback_dip = input.bool(false, "Pullback DIP şartı (allowDipFinal)", group=grpDB)
+
+// HIBRIT: WATCH (intrabar) 4H
+db_watch_enable = input.bool(true, "4H WATCH (intrabar) aktif", group=grpDB)
+db_watch_cooldown_min_4h = input.int(60, "4H WATCH cooldown (dk)", minval=0, group=grpDB)
+
+// Release toleransı (öneri: 1)
+db_release_window_bars = input.int(1, "Release toleransı (bar)", minval=0, maxval=5, group=grpDB)
+
+// --- Dip / Drawdown
+db_dd_min_4h = input.float(30.0, "4H min drawdown %", step=1, group=grpDB)
+db_dd_min_1d = input.float(30.0, "1D min drawdown %", step=1, group=grpDB)
+db_dd_min_1w = input.float(25.0, "1W min drawdown %", step=1, group=grpDB)
+
+// --- Stabilizasyon (range sıkışma)
+db_sq_maxrng_4h = input.float(10.0, "4H sıkışma max range %", step=0.5, group=grpDB)
+db_sq_maxrng_1d = input.float(12.0, "1D sıkışma max range %", step=0.5, group=grpDB)
+db_sq_maxrng_1w = input.float(18.0, "1W sıkışma max range %", step=0.5, group=grpDB)
+
+// --- SQZ (LazyBear)
+db_sqz_lenBB  = input.int(20, "SQZ BB Len", minval=5, group=grpDB)
+db_sqz_multBB = input.float(2.0, "SQZ BB Mult", step=0.1, group=grpDB)
+db_sqz_lenKC  = input.int(20, "SQZ KC Len", minval=5, group=grpDB)
+db_sqz_multKC = input.float(1.5, "SQZ KC Mult", step=0.1, group=grpDB)
+db_sqz_useTR  = input.bool(true, "SQZ KC TrueRange", group=grpDB)
+
+// Squeeze süresi (release'ten önce) en az N bar
+db_req_sqzOn_4h = input.int(8, "4H sqzOn min bar (squeeze süresi)", minval=0, group=grpDB)
+db_req_sqzOn_1d = input.int(3, "1D sqzOn min bar (squeeze süresi)", minval=0, group=grpDB)
+db_req_sqzOn_1w = input.int(1, "1W sqzOn min bar (squeeze süresi)", minval=0, group=grpDB)
+
+// --- Hacim onayı
+db_vol_len = input.int(20, "Vol SMA Len", minval=5, group=grpDB)
+db_vol_mult_4h = input.float(1.6, "4H vol SMA x", step=0.1, group=grpDB)
+db_vol_mult_1d = input.float(1.3, "1D vol SMA x", step=0.1, group=grpDB)
+db_vol_mult_1w = input.float(1.2, "1W vol SMA x", step=0.1, group=grpDB)
+
+// --- ATR hedef (potansiyel % göstermek + min hedef filtresi için)
+db_atr_len = input.int(14, "ATR Len", minval=5, group=grpDB)
+db_tgt_atr_k_4h = input.float(2.0, "4H target ATR x", step=0.1, group=grpDB)
+db_tgt_atr_k_1d = input.float(3.3, "1D target ATR x", step=0.1, group=grpDB)
+db_tgt_atr_k_1w = input.float(6.0, "1W target ATR x", step=0.1, group=grpDB)
+
+// --- Minimum hedef filtresi (dinamik): min 7% ile başlar
+db_min_start_pct = input.float(7.0, "Min hedef başlangıç %", minval=0.0, step=0.5, group=grpDB)
+db_dyn_on = input.bool(true, "Min hedef dinamik artsın (ATR% ile)", group=grpDB)
+db_dyn_atr_floor = input.float(2.0, "ATR% taban", minval=0.0, step=0.5, group=grpDB)
+db_dyn_atr_mult  = input.float(0.50, "ATR% çarpan", minval=0.0, step=0.05, group=grpDB)
+db_min_cap_pct   = input.float(15.0, "Min hedef üst sınır %", minval=0.0, step=0.5, group=grpDB)
+
+// --- Cooldown (CONFIRMED spam kontrol)
+db_cd_min_4h = input.int(240,  "4H CONFIRMED cooldown (dk)", minval=0, group=grpDB)
+db_cd_min_1d = input.int(1440, "1D CONFIRMED cooldown (dk)", minval=0, group=grpDB)
+db_cd_min_1w = input.int(10080,"1W CONFIRMED cooldown (dk)", minval=0, group=grpDB)
+
+// --- Debug
+db_show_debug = input.bool(false, "Debug label", group=grpDB)
+
+// ----------------- Helpers
+db_fmtPct(v) => na(v) ? "NA" : str.tostring(v, "#.##") + "%"
+db_fmt(v) => na(v) ? "NA" : str.tostring(v, format.mintick)
+db_clamp(v, lo, hi) => v < lo ? lo : v > hi ? hi : v
+
+f_db_sqz_state(_lenBB, _multBB, _lenKC, _multKC, _useTR) =>
+    _src = close
+    _basis = ta.sma(_src, _lenBB)
+    _dev   = _multBB * ta.stdev(_src, _lenBB)
+    _upperBB = _basis + _dev
+    _lowerBB = _basis - _dev
+
+    _range = _useTR ? ta.tr(true) : (high - low)
+    _rangema = ta.sma(_range, _lenKC)
+    _ma = ta.sma(_src, _lenKC)
+    _upperKC = _ma + _rangema * _multKC
+    _lowerKC = _ma - _rangema * _multKC
+
+    _sqzOn  = (_lowerBB > _lowerKC) and (_upperBB < _upperKC)
+    _sqzOff = (_lowerBB < _lowerKC) and (_upperBB > _upperKC)
+
+    _base = close - math.avg(math.avg(ta.highest(high, _lenKC), ta.lowest(low, _lenKC)), ta.sma(close, _lenKC))
+    _val  = ta.linreg(_base, _lenKC, 0)
+
+    [_sqzOn, _sqzOff, _val]
+
+// Lookback (yaklaşık): 4H ~6 ay / 2 hafta, 1D ~6 ay / 1 ay, 1W ~2 yıl / 3 ay
+f_db_lookbacks(tfLabel) =>
+    int ddLen = 0
+    int sqLen = 0
+    if tfLabel == "4H"
+        ddLen := 1080
+        sqLen := 84
+    else if tfLabel == "1D"
+        ddLen := 180
+        sqLen := 20
+    else
+        ddLen := 104
+        sqLen := 12
+    [ddLen, sqLen]
+
+// TF pack (HATASIZ: self-referans yok)
+f_db_pack(tfLabel, ddMin, sqMaxRng, volMult, tgtK, reqSqzOnBars, releaseWinBars) =>
+    [ddLen, sqLen] = f_db_lookbacks(tfLabel)
+
+    _peak = ta.highest(close, ddLen)
+    _ddPct = (_peak == 0 or na(_peak)) ? na : (1.0 - close / _peak) * 100.0
+    _ddOk = not na(_ddPct) and _ddPct >= ddMin
+
+    _rng = ta.highest(high, sqLen) - ta.lowest(low, sqLen)
+    _rngPct = close == 0 ? na : (_rng / close) * 100.0
+    _sqOk = not na(_rngPct) and _rngPct <= sqMaxRng
+
+    [_on, _off, _val] = f_db_sqz_state(db_sqz_lenBB, db_sqz_multBB, db_sqz_lenKC, db_sqz_multKC, db_sqz_useTR)
+
+    // sqzOn süresi (sadece barssince ile)
+    _onBars = _on ? (ta.barssince(not _on) + 1) : 0
+
+    // Release anında squeeze süresi: bir önceki bar sqzOn idi (çoğunlukla), o yüzden [1]
+    _prevOnBars = _onBars[1]
+    _squeezeOk = reqSqzOnBars == 0 ? true : (not na(_prevOnBars) and _prevOnBars >= reqSqzOnBars)
+
+    // releaseNow + tolerans penceresi
+    _releaseNow = _off and not _off[1]
+    _releaseRecent = _off and (ta.barssince(_releaseNow) <= releaseWinBars)
+    _releaseLong = _releaseRecent and (_val > 0)
+
+    _vma = ta.sma(volume, db_vol_len)
+    _volOk = volume > _vma * volMult
+
+    _atr = ta.atr(db_atr_len)
+    _target = close + _atr * tgtK
+    _tgtPct = close == 0 ? na : (_target / close - 1) * 100.0
+
+    [_ddOk, _sqOk, _squeezeOk, _releaseLong, _volOk, close, _tgtPct, _ddPct, _rngPct, _val, _prevOnBars]
+
+// ----------------- MTF fetch
+[ddOk4h, sqOk4h, squeezeOk4h, rel4h, volOk4h, c4h, tgtPct4h, ddPct4h, rngPct4h, sqzVal4h, sqzOnBarsPrev4h] =   request.security(syminfo.tickerid, "240",     f_db_pack("4H", db_dd_min_4h, db_sq_maxrng_4h, db_vol_mult_4h, db_tgt_atr_k_4h, db_req_sqzOn_4h, db_release_window_bars),
+        barmerge.gaps_off, barmerge.lookahead_off)
+
+[ddOk1d, sqOk1d, squeezeOk1d, rel1d, volOk1d, c1d, tgtPct1d, ddPct1d, rngPct1d, sqzVal1d, sqzOnBarsPrev1d] =   request.security(syminfo.tickerid, "D",       f_db_pack("1D", db_dd_min_1d, db_sq_maxrng_1d, db_vol_mult_1d, db_tgt_atr_k_1d, db_req_sqzOn_1d, db_release_window_bars),
+        barmerge.gaps_off, barmerge.lookahead_off)
+
+[ddOk1w, sqOk1w, squeezeOk1w, rel1w, volOk1w, c1w, tgtPct1w, ddPct1w, rngPct1w, sqzVal1w, sqzOnBarsPrev1w] =   request.security(syminfo.tickerid, "W",    f_db_pack("1W", db_dd_min_1w, db_sq_maxrng_1w, db_vol_mult_1w, db_tgt_atr_k_1w, db_req_sqzOn_1w, db_release_window_bars),
+        barmerge.gaps_off, barmerge.lookahead_off)
+
+// TF close flags
+is4hClose = request.security(syminfo.tickerid, "240", barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
+is1dClose = request.security(syminfo.tickerid, "D",   barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
+is1wClose = request.security(syminfo.tickerid, "W",   barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
+
+// Pullback filter (chart TF)
+pbOk = not db_require_pullback_dip or allowDipFinal
+
+// Dinamik min hedef (chart ATR% ile)
+atr_chart = ta.atr(db_atr_len)
+atrPct_chart = close == 0 ? na : (atr_chart / close) * 100.0
+minReqRaw = not db_dyn_on or na(atrPct_chart) ? db_min_start_pct :    db_min_start_pct + math.max(0.0, (atrPct_chart - db_dyn_atr_floor)) * db_dyn_atr_mult
+minReq = db_clamp(minReqRaw, db_min_start_pct, db_min_cap_pct)
+
+// Cooldown times
+var int lastConfirmed4h = na
+var int lastConfirmed1d = na
+var int lastConfirmed1w = na
+var int lastWatch4h = na
+
+okConf4h = db_cd_min_4h == 0 or na(lastConfirmed4h) or (time - lastConfirmed4h > db_cd_min_4h*60*1000)
+okConf1d = db_cd_min_1d == 0 or na(lastConfirmed1d) or (time - lastConfirmed1d > db_cd_min_1d*60*1000)
+okConf1w = db_cd_min_1w == 0 or na(lastConfirmed1w) or (time - lastConfirmed1w > db_cd_min_1w*60*1000)
+okWatch4h = db_watch_cooldown_min_4h == 0 or na(lastWatch4h) or (time - lastWatch4h > db_watch_cooldown_min_4h*60*1000)
+
+// Final conditions
+base4h = db_enable and pbOk and ddOk4h and sqOk4h and squeezeOk4h and rel4h and volOk4h and not na(tgtPct4h) and tgtPct4h >= minReq
+base1d = db_enable and pbOk and ddOk1d and sqOk1d and squeezeOk1d and rel1d and volOk1d and not na(tgtPct1d) and tgtPct1d >= minReq
+base1w = db_enable and pbOk and ddOk1w and sqOk1w and squeezeOk1w and rel1w and volOk1w and not na(tgtPct1w) and tgtPct1w >= minReq
+
+watch4h = db_watch_enable and okWatch4h and base4h and not is4hClose
+conf4h  = okConf4h and base4h and is4hClose
+conf1d  = okConf1d and base1d and is1dClose
+conf1w  = okConf1w and base1w and is1wClose
+
+f_db_watch_msg() =>
+    lines = array.new_string()
+    array.push(lines, "IZLEME: 4 SAATLIK AL VERDI; BAR KAPANISINI TAKIP ET")
+    array.push(lines, "HISSE: "+syminfo.ticker)
+    array.push(lines, "MIN HEDEF (DINAMIK): "+db_fmtPct(minReq))
+    array.push(lines, "POTANSIYEL: 4H="+db_fmtPct(tgtPct4h)+" | 1D="+db_fmtPct(tgtPct1d)+" | 1W="+db_fmtPct(tgtPct1w))
+    array.push(lines, "SQUEEZE_SURE(onceki 4H): "+(na(sqzOnBarsPrev4h)?"NA":str.tostring(sqzOnBarsPrev4h,"#")))
+    f_lineJoin(lines)
+
+f_db_conf_msg(tfLabel, c, ddPct, rngPct, sqzVal, potD, potW, potThis, minReqPct, prevOnBars) =>
+    lines = array.new_string()
+    array.push(lines, "DIP+BOOST ("+tfLabel+") — AL (ONAY)")
+    array.push(lines, "HISSE: "+syminfo.ticker+" | FIYAT("+tfLabel+"): "+db_fmt(c))
+    array.push(lines, "")
+    array.push(lines, "MIN HEDEF (DINAMIK): "+db_fmtPct(minReqPct))
+    array.push(lines, "POTANSIYEL: "+tfLabel+"="+db_fmtPct(potThis)+" | 1D="+db_fmtPct(potD)+" | 1W="+db_fmtPct(potW))
+    array.push(lines, "")
+    array.push(lines, "SETUP: DRAWDOWN="+db_fmtPct(ddPct)+" | SIKISMA(RANGE)="+db_fmtPct(rngPct))
+    array.push(lines, "TETIK: SQZ RELEASE LONG | SQZ="+(na(sqzVal)?"NA":str.tostring(sqzVal,"#.####")))
+    array.push(lines, "SQUEEZE_SURE(prev): "+(na(prevOnBars)?"NA":str.tostring(prevOnBars,"#"))+" | RELEASE_WIN="+str.tostring(db_release_window_bars))
+    array.push(lines, "FILTRE: PULLBACK_DIP="+(pbOk?"OK":"NO")+" | HACIM=OK")
+    array.push(lines, "")
+    f_lineJoin(lines)
+
+if watch4h
+    send_msg(db_chat_id, f_db_watch_msg())
+    lastWatch4h := time
+
+if conf4h
+    send_msg(db_chat_id, f_db_conf_msg("4H", c4h, ddPct4h, rngPct4h, sqzVal4h, tgtPct1d, tgtPct1w, tgtPct4h, minReq, sqzOnBarsPrev4h))
+    lastConfirmed4h := time
+
+if conf1d
+    send_msg(db_chat_id, f_db_conf_msg("1D", c1d, ddPct1d, rngPct1d, sqzVal1d, tgtPct1d, tgtPct1w, tgtPct1d, minReq, sqzOnBarsPrev1d))
+    lastConfirmed1d := time
+
+if conf1w
+    send_msg(db_chat_id, f_db_conf_msg("1W", c1w, ddPct1w, rngPct1w, sqzVal1w, tgtPct1d, tgtPct1w, tgtPct1w, minReq, sqzOnBarsPrev1w))
+    lastConfirmed1w := time
+
+alertcondition(watch4h, title="DIP+BOOST 4H WATCH", message="WATCH: 4H sinyal (intrabar) - close bekle")
+alertcondition(conf4h,  title="DIP+BOOST 4H CONFIRMED", message="CONFIRMED: 4H close")
+alertcondition(conf1d,  title="DIP+BOOST 1D CONFIRMED", message="CONFIRMED: 1D close")
+alertcondition(conf1w,  title="DIP+BOOST 1W CONFIRMED", message="CONFIRMED: 1W close")
+
+if db_show_debug and barstate.islast
+    label.new(bar_index, close,
+        "DB MIN:"+db_fmtPct(minReq)+
+        " | 4H:"+db_fmtPct(tgtPct4h)+
+        " D:"+db_fmtPct(tgtPct1d)+
+        " W:"+db_fmtPct(tgtPct1w)+
+        " | ddOk4h:"+str.tostring(ddOk4h)+
+        " sqOk4h:"+str.tostring(sqOk4h)+
+        " sqPrevOnBars:"+ (na(sqzOnBarsPrev4h)?"NA":str.tostring(sqzOnBarsPrev4h,"#"))+
+        " rel:"+str.tostring(rel4h)+
+        " vol:"+str.tostring(volOk4h)+
+        " pb:"+str.tostring(pbOk),
+        style=label.style_label_left, color=color.new(color.purple, 0), textcolor=color.white, size=size.tiny)
+// =====================================================================
+// ===================== 4) SUPERDIP - DAILY DIP TARAMA =================
+// SuperDip v6_1 entegrasyonu - Günlük veri ile dip taraması
+// Chart TF'den bağımsız - Her TF'de çalışır (daily veriyi tarar)
+// ORİJİNAL + GELİŞMİŞ + V6 UYUMSUZLUK (ELMAS/ALTIN)
+// =====================================================================
+
+grpSD="SuperDip • Ana"
+sd_enable=input.bool(true,"SuperDip Aktif",group=grpSD)
+sd_dipMaxPct=input.float(16,"52w dipten max % (Close)",step=0.5,group=grpSD)  // %12 idi ben 20 yaptim.
+sd_useDailyFilters=input.bool(true,"Günlük filtreler (tavan/%7)",group=grpSD)
+sd_tavanOran=input.float(0.06,"Tavan oranı",step=0.01,group=grpSD)
+sd_skipDailyUpPct=input.float(7.0,"Günlük %X üzeri pas geç",step=0.5,group=grpSD)
+sd_volMult=input.float(1.2,"Hacim x SMA20",step=0.1,group=grpSD)
+sd_adxMin=input.float(15,"Min ADX",step=0.5,group=grpSD)
+sd_bbNearMult=input.float(1.05,"BB alt yakınlık",step=0.01,group=grpSD)
+sd_scoreOrigConfTh=input.int(6,"ORJİNAL CONFIRMED min skor",minval=1,maxval=30,group=grpSD)
+sd_atrLen=input.int(14,"ATR length",group=grpSD)
+sd_atrMultSL=input.float(1.6,"Stop mult (ATR)",step=0.1,group=grpSD)
+sd_atrMultTP=input.float(2.6,"Target mult (ATR)",step=0.1,group=grpSD)
+
+grpSDAdv="SuperDip • Gelişmiş"
+sd_advEnable=input.bool(true,"Gelişmiş analiz aktif",group=grpSDAdv)
+sd_touchLookbackDays=input.int(20,"Dip teması lookback (gün)",minval=1,group=grpSDAdv)
+sd_touchPct=input.float(3.0,"Dip teması tolerans %",step=0.1,group=grpSDAdv)
+sd_scoreAdvConfTh=input.int(7,"GELİŞMİŞ CONFIRMED min skor",minval=1,maxval=40,group=grpSDAdv)
+sd_advRsiMax=input.float(55.0,"GELİŞMİŞ RSI max",step=1,group=grpSDAdv)
+sd_impulseRequire=input.bool(true,"İtici güç şartı",group=grpSDAdv)
+
+grpSDLiq="SuperDip • Likidite"
+sd_minTurnoverTL=input.float(10000000.0,"Min günlük TL hacim",step=1000000.0,group=grpSDLiq)
+
+grpSDMode="SuperDip • Mesaj Modu"
+sd_enableD1Conf=input.bool(true,"CONFIRMED (D1) mesajı gönder",group=grpSDMode)
+sd_enableD0Repaint=input.bool(true,"REPAINT (D0) mesajı gönder",group=grpSDMode)
+sd_chatId=input.string("-4837230509","SuperDip Chat ID",group=grpSDMode)
+sd_dailyOnce=input.bool(true,"Daily once (CONFIRMED)",group=grpSDMode)
+sd_dailyOnceRepaint=input.bool(true,"Daily once (REPAINT)",group=grpSDMode,tooltip="REPAINT için günde 1 kez - aynı gün içinde tekrar göndermez")
+sd_cooldownMin=input.int(15,"Cooldown (dk) - CONFIRMED",group=grpSDMode,minval=0)
+sd_cooldownMinRepaint=input.int(60,"Cooldown (dk) - REPAINT",group=grpSDMode,minval=0)
+sd_showMomentumScore=input.bool(false,"Momentum Skoru göster",group=grpSDMode,tooltip="RSI 3 bar↑, OBV↑, İtici güç, Güçlü yeşil mumdan hesaplanan 0-10 momentum skoru")
+
+grpSDInc="SuperDip • Hangi mesajlar?"
+sd_includeOrigConf=input.bool(true,"ORİJİNAL CONFIRMED",group=grpSDInc)
+sd_includeAdvConf=input.bool(true,"GELİŞMİŞ CONFIRMED",group=grpSDInc)
+sd_includeOrigRepaint=input.bool(true,"ORİJİNAL REPAINT",group=grpSDInc)
+sd_includeAdvRepaint=input.bool(true,"GELİŞMİŞ REPAINT",group=grpSDInc)
+sd_includeElmasRepaint=input.bool(true,"ELMAS REPAINT",group=grpSDInc)
+sd_includeAltinRepaint=input.bool(true,"ALTIN REPAINT",group=grpSDInc)
+
+grpSDDiv="SuperDip • V6 Uyumsuzluk"
+sd_divEnable=input.bool(true,"V6 Uyumsuzluk (ELMAS/ALTIN)",group=grpSDDiv)
+sd_goldMinQuality=input.int(55,"ALTIN min kalite",minval=0,maxval=100,group=grpSDDiv)
+sd_elmasDipMaxPct=input.float(10,"ELMAS: 52w dipten max %",step=0.5,group=grpSDDiv)
+
+grpSDVol="SuperDip • Hacim Çarpanları"
+sd_volMultConfirmed=input.float(1.2,"CONFIRMED Hacim x SMA20",step=0.1,group=grpSDVol,tooltip="Confirmed sinyaller için daha yumuşak hacim filtresi")
+sd_volMultRepaint=input.float(1.5,"REPAINT Hacim x SMA20",step=0.1,group=grpSDVol,tooltip="Repaint sinyaller için daha sıkı hacim filtresi")
+
+grpSDOverext="SuperDip • Aşırı Uzanma Filtresi (Altın/Elmas)"
+sd_enableOverextFilter=input.bool(true,"Aşırı uzanma filtresi aktif",group=grpSDOverext,tooltip="Altın ve Elmas sinyallerini aşırı uzanmış hisselerde engeller")
+sd_ovx_todayMove=input.float(6.0,"Bugünkü hareket limiti %",step=0.5,group=grpSDOverext,tooltip="Günlük open'dan close'a hareket > %6 ise engelle")
+sd_ovx_20dChange=input.float(20.0,"20 günlük değişim limiti %",step=1.0,group=grpSDOverext,tooltip="Son 20 günde close değişimi > %20 ise engelle")
+sd_ovx_52wLowDist=input.float(250.0,"52w dip uzaklık limiti %",step=10.0,group=grpSDOverext,tooltip="52 haftalık dipten uzaklık > %250 ise engelle")
+
+grpSDPatlama="SuperDip • Patlama Yakınlığı (1-3 Gün)"
+sd_enablePatlamaFilter=input.bool(true,"Patlama filtresi aktif (Altın/Elmas)",group=grpSDPatlama,tooltip="Altın ve Elmas için sıkışma veya kırılıma yakınlık şartı")
+sd_squeezeMaxPct=input.float(8.0,"SQUEEZE: Max BB genişliği %",step=0.5,group=grpSDPatlama,tooltip="Bollinger bantları daraldığında patlama adayı (düşük=sıkışma)")
+sd_nearBreakN=input.int(10,"KIRILIMA: Geriye bakış periyodu",minval=1,group=grpSDPatlama,tooltip="Son N günlük zirveye uzaklık hesabı için")
+sd_nearBreakPct=input.float(2.0,"KIRILIMA: Max uzaklık %",step=0.5,group=grpSDPatlama,tooltip="Zirveye ne kadar yakınsa kırılıma o kadar yakın (düşük=dirence yakın)")
+
+grpSDUpgrade="SuperDip • UPGRADE Mesajları"
+sd_enableUpgrade=input.bool(true,"UPGRADE mesajları aktif",group=grpSDUpgrade,tooltip="Gün içinde pozitif teknik gelişme olursa ek mesaj gönder (max 1/gün)")
+sd_upgradeMinMomentum=input.int(1,"Min Momentum artışı",minval=0,group=grpSDUpgrade,tooltip="Momentum skoru en az kaç puan artmalı")
+sd_upgradeMinPatlama=input.int(2,"Min Patlama artışı",minval=0,group=grpSDUpgrade,tooltip="Patlama skoru en az kaç puan artmalı")
+sd_upgradeMinSecim=input.int(10,"Min Seçim Puanı artışı",minval=0,group=grpSDUpgrade,tooltip="Seçim puanı en az kaç puan artmalı")
+sd_showExtraTargets=input.bool(false,"Ek hedefler göster (HEDEF2/HEDEF3)",group=grpSDUpgrade,tooltip="Ek muhafazakar ve agresif hedefler göster")
+
+grpSDIntrabar="SuperDip • Intrabar REPAINT"
+sd_intrabarRepaint=input.bool(true,"Intrabar REPAINT (anında alarm)",group=grpSDIntrabar,tooltip="REPAINT sinyalleri bar kapanışını beklemeden hemen tetiklenir (fırsatları kaçırmamak için)")
+
+grpSDSuperman="SuperDip • SUPERMAN Meta-Signal"
+sd_enableSuperman=input.bool(true,"SUPERMAN meta-signal aktif",group=grpSDSuperman,tooltip="En yüksek öncelikli, en düşük riskli setupları işaretle")
+sd_supermanPatlamaMin=input.int(7,"SUPERMAN: Min Patlama Skoru",minval=0,maxval=10,group=grpSDSuperman)
+sd_supermanSecimMin=input.int(70,"SUPERMAN: Min Seçim Puanı",minval=0,maxval=100,group=grpSDSuperman)
+sd_supermanLiqMin=input.float(20000000.0,"SUPERMAN: Min Likidite (TL)",step=1000000.0,group=grpSDSuperman)
+sd_supermanRequireSqueeze=input.bool(false,"SUPERMAN: SQUEEZE şartı (opsiyonel)",group=grpSDSuperman,tooltip="VAR ise tercih edilir ama zorunlu değil")
+sd_supermanAtrMax=input.float(4.5,"SUPERMAN: Max ATR% (güvenlik)",step=0.5,group=grpSDSuperman,tooltip="Aşırı volatiliteyi önlemek için (opsiyonel)")
+
+// Updated engine with volume multiplier parameter and overextension metrics
+f_sd_dailyEngine(volMult)=>
+    dC=close
+    dL=low
+    dH=high
+    dO=open
+    dV=volume
+    
+    turnTL=dC*dV
+    liqOk=turnTL>=sd_minTurnoverTL
+    
+    dip52C=ta.lowest(dC,252)
+    dipDistPct=dip52C!=0.0?(dC-dip52C)/dip52C*100.0:999.0
+    inDipZone=dipDistPct<sd_dipMaxPct
+    
+    dPrevC=dC[1]
+    dUpPct=dPrevC>0?(dC-dPrevC)/dPrevC*100.0:0.0
+    dTavan0=dPrevC>0?(dC>=dPrevC*(1.0+sd_tavanOran)):false
+    dAnyTavan2=dTavan0[1] or dTavan0[2]
+    dailyFiltersPass=not sd_useDailyFilters?true:((not dAnyTavan2) and (dUpPct<sd_skipDailyUpPct))
+    
+    setup=liqOk and inDipZone and dailyFiltersPass
+    
+    ema9=ta.ema(dC,9)
+    ema21=ta.ema(dC,21)
+    ema34=ta.ema(dC,34)
+    cEma=ema9>ema21 and ema21>ema34
+    
+    rsi=ta.rsi(dC,14)
+    rsiUp3=(rsi>rsi[1] and rsi[1]>rsi[2])
+    cRsiOrig=(rsi>30 and rsi<50 and rsi>rsi[1])
+    cRsiAdv=(rsi>30 and rsi<sd_advRsiMax and rsi>rsi[1])
+    
+    [macdLine,signalLine,hist]=ta.macd(dC,12,26,9)
+    cMacd=(hist>0 and hist[1]<0)
+    
+    volMa20=ta.sma(dV,20)
+    cVol=dV>volMa20*volMult
+    
+    obv=ta.cum(math.sign(ta.change(dC))*dV)
+    obvDiff=obv-obv[1]
+    cObv=(obvDiff>0 and obvDiff[1]>0)
+    
+    [plusDI,minusDI,adx]=ta.dmi(14,14)
+    cAdx=adx>sd_adxMin
+    
+    bbBasis=ta.sma(dC,20)
+    bbDev=2.0*ta.stdev(dC,20)
+    bbLow=bbBasis-bbDev
+    cBb=dC<bbLow*sd_bbNearMult
+    
+    barRng=dH-dL
+    strongGreen=dC>dO and barRng>0 and (dC-dO)>0.6*barRng
+    
+    score=0
+    score+=cEma?1:0
+    score+=cRsiOrig?1:0
+    score+=rsiUp3?1:0
+    score+=cMacd?1:0
+    score+=cVol?1:0
+    score+=cObv?1:0
+    score+=cAdx?1:0
+    score+=cBb?1:0
+    score+=strongGreen?1:0
+    
+    dip52L=ta.lowest(dL,252)
+    touched=ta.lowest(dL,sd_touchLookbackDays)<=(dip52L*(1.0+sd_touchPct/100.0))
+    
+    spark=(cMacd or strongGreen or rsiUp3)
+    fuel=(cVol or cObv)
+    impulseOk=not sd_impulseRequire?true:(spark and fuel)
+    
+    advScore=score+(touched?1:0)+(cRsiAdv?1:0)
+    
+    atr=ta.atr(sd_atrLen)
+    entry=dC
+    target=entry+sd_atrMultTP*atr
+    stop=entry-sd_atrMultSL*atr
+    tpPct=entry!=0.0?(target-entry)/entry*100.0:na
+    slPct=entry!=0.0?(entry-stop)/entry*100.0:na
+    
+    d1_origConf=setup and score>=sd_scoreOrigConfTh
+    d1_advConf=sd_advEnable and setup and touched and impulseOk and advScore>=sd_scoreAdvConfTh
+    
+    // V6 Divergence (ALTIN/ELMAS)
+    dip52LPct=dip52L!=0.0?(dL-dip52L)/dip52L*100.0:999.0
+    inElmasDip=dip52LPct<sd_elmasDipMaxPct
+    
+    ema20spark=ta.ema(dC,20)
+    sparkOk=dC>ema20spark and ema20spark>ema20spark[1]
+    
+    quality=math.min(100,score*10+(touched?10:0))
+    
+    // Overextension metrics for Altın/Elmas (calculated on daily TF)
+    // Today's move from open to close
+    todayMovePct=dO!=0.0?(dC/dO-1.0)*100.0:0.0
+    // 20D change using close
+    closeD20=dC[20]
+    change20dPct=closeD20!=0.0?(dC/closeD20-1.0)*100.0:0.0
+    // Distance from 52w low using daily low
+    dist52wLowPct=dip52L!=0.0?(dC/dip52L-1.0)*100.0:0.0
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics - 1-3 day timeframe
+    // A) SQUEEZE - Bollinger Band Width %
+    bbUpper=bbBasis+bbDev
+    bbLower=bbBasis-bbDev
+    bbWidthPct=bbBasis!=0.0?((bbUpper-bbLower)/bbBasis)*100.0:na
+    squeezeOk=not na(bbWidthPct) and bbWidthPct<=sd_squeezeMaxPct
+    
+    // B) KIRILIMA YAKIN (NearBreak) - Distance to N-day high %
+    hhN=ta.highest(dH,sd_nearBreakN)
+    distToHighPct=hhN>0.0?(1.0-dC/hhN)*100.0:na
+    nearBreakOk=not na(distToHighPct) and distToHighPct<=sd_nearBreakPct
+    
+    // C) ATR% (Volatility)
+    atrPct=dC!=0.0?(atr/dC)*100.0:na
+    
+    // Patlama filter: at least one of squeeze or nearBreak must be OK
+    patlamaOk=squeezeOk or nearBreakOk
+    
+    d1_elmas=sd_divEnable and liqOk and inElmasDip and sparkOk and impulseOk
+    d1_altin=sd_divEnable and liqOk and (not inElmasDip) and sparkOk and impulseOk and quality>=sd_goldMinQuality
+    
+    // Apply patlama filter to Altın/Elmas if enabled
+    if sd_enablePatlamaFilter
+        d1_elmas:=d1_elmas and patlamaOk
+        d1_altin:=d1_altin and patlamaOk
+    
+    [turnTL,score,advScore,entry,target,stop,tpPct,slPct,dipDistPct,touched?1:0,impulseOk?1:0,d1_origConf?1:0,d1_advConf?1:0,d1_elmas?1:0,d1_altin?1:0,todayMovePct,change20dPct,dist52wLowPct,rsi,cEma?1:0,cRsiOrig?1:0,rsiUp3?1:0,cObv?1:0,cAdx?1:0,cBb?1:0,strongGreen?1:0,quality,bbWidthPct,distToHighPct,atrPct,squeezeOk?1:0,nearBreakOk?1:0]
+
+// REPAINT (D0) - lookahead_on for intraday signals with 2-bar stability
+[sd_turnTL,sd_score,sd_advScore,sd_entry,sd_target,sd_stop,sd_tpPct,sd_slPct,sd_dipDistPct,sd_touched_i,sd_impulseOk_i,sd_d1_origConf_i,sd_d1_advConf_i,sd_d1_elmas_i,sd_d1_altin_i,sd_todayMovePct,sd_change20dPct,sd_dist52wLowPct,sd_rsi,sd_cEma_i,sd_cRsiOrig_i,sd_rsiUp3_i,sd_cObv_i,sd_cAdx_i,sd_cBb_i,sd_strongGreen_i,sd_quality,sd_bbWidthPct,sd_distToHighPct,sd_atrPct,sd_squeezeOk_i,sd_nearBreakOk_i]=request.security(syminfo.tickerid,"D",f_sd_dailyEngine(sd_volMultRepaint),barmerge.gaps_off,barmerge.lookahead_on)
+
+sd_touched=sd_touched_i==1
+sd_impulseOk=sd_impulseOk_i==1
+sd_d0_origConf=sd_d1_origConf_i==1
+sd_d0_advConf=sd_d1_advConf_i==1
+sd_d0_elmas=sd_d1_elmas_i==1
+sd_d0_altin=sd_d1_altin_i==1
+sd_cEma=sd_cEma_i==1
+sd_cRsiOrig=sd_cRsiOrig_i==1
+sd_rsiUp3=sd_rsiUp3_i==1
+sd_cObv=sd_cObv_i==1
+sd_cAdx=sd_cAdx_i==1
+sd_cBb=sd_cBb_i==1
+sd_strongGreen=sd_strongGreen_i==1
+sd_squeezeOk=sd_squeezeOk_i==1
+sd_nearBreakOk=sd_nearBreakOk_i==1
+
+// CONFIRMED (D1) - lookahead_off for true confirmed daily bar signals
+[sd_turnTL_d1,sd_score_d1,sd_advScore_d1,sd_entry_d1,sd_target_d1,sd_stop_d1,sd_tpPct_d1,sd_slPct_d1,sd_dipDistPct_d1,sd_touched_i_d1,sd_impulseOk_i_d1,sd_d1_origConf_i_d1,sd_d1_advConf_i_d1,sd_d1_elmas_i_d1,sd_d1_altin_i_d1,sd_todayMovePct_d1,sd_change20dPct_d1,sd_dist52wLowPct_d1,sd_rsi_d1,sd_cEma_i_d1,sd_cRsiOrig_i_d1,sd_rsiUp3_i_d1,sd_cObv_i_d1,sd_cAdx_i_d1,sd_cBb_i_d1,sd_strongGreen_i_d1,sd_quality_d1,sd_bbWidthPct_d1,sd_distToHighPct_d1,sd_atrPct_d1,sd_squeezeOk_i_d1,sd_nearBreakOk_i_d1]=request.security(syminfo.tickerid,"D",f_sd_dailyEngine(sd_volMultConfirmed),barmerge.gaps_off,barmerge.lookahead_off)
+
+sd_touched_d1=sd_touched_i_d1==1
+sd_impulseOk_d1=sd_impulseOk_i_d1==1
+sd_d1_origConf=sd_d1_origConf_i_d1==1
+sd_d1_advConf=sd_d1_advConf_i_d1==1
+sd_d1_elmas=sd_d1_elmas_i_d1==1
+sd_d1_altin=sd_d1_altin_i_d1==1
+sd_cEma_d1=sd_cEma_i_d1==1
+sd_cRsiOrig_d1=sd_cRsiOrig_i_d1==1
+sd_rsiUp3_d1=sd_rsiUp3_i_d1==1
+sd_cObv_d1=sd_cObv_i_d1==1
+sd_cAdx_d1=sd_cAdx_i_d1==1
+sd_cBb_d1=sd_cBb_i_d1==1
+sd_strongGreen_d1=sd_strongGreen_i_d1==1
+sd_squeezeOk_d1=sd_squeezeOk_i_d1==1
+sd_nearBreakOk_d1=sd_nearBreakOk_i_d1==1
+
+// Check if daily bar is confirmed (for proper REPAINT/CONFIRMED labeling)
+sd_isDailyConfirmed=request.security(syminfo.tickerid,"D",barstate.isconfirmed,barmerge.gaps_off,barmerge.lookahead_off)
+
+// 2-bar stability check for REPAINT alerts
+sd_d0_origConf_stable=sd_d0_origConf and sd_d0_origConf[1]
+sd_d0_advConf_stable=sd_d0_advConf and sd_d0_advConf[1]
+sd_d0_elmas_stable=sd_d0_elmas and sd_d0_elmas[1]
+sd_d0_altin_stable=sd_d0_altin and sd_d0_altin[1]
+sd_liqOk=sd_turnTL>=sd_minTurnoverTL
+
+// Overextension filter for Altın/Elmas (applies to both REPAINT and CONFIRMED)
+sd_overextendedRepaint=sd_enableOverextFilter and (sd_todayMovePct>sd_ovx_todayMove or sd_change20dPct>sd_ovx_20dChange or sd_dist52wLowPct>sd_ovx_52wLowDist)
+sd_overextendedConf=sd_enableOverextFilter and (sd_todayMovePct_d1>sd_ovx_todayMove or sd_change20dPct_d1>sd_ovx_20dChange or sd_dist52wLowPct_d1>sd_ovx_52wLowDist)
+
+sd_currDay=str.format("{0}-{1}-{2}",year(time),month(time),dayofmonth(time))
+sd_cooldownMs=sd_cooldownMin*60*1000
+sd_cooldownMsRepaint=sd_cooldownMinRepaint*60*1000
+
+// CONFIRMED state
+var string sd_lastDayOrigConf=""
+var int sd_lastTimeOrigConf=na
+var string sd_lastDayAdvConf=""
+var int sd_lastTimeAdvConf=na
+var string sd_lastDayElmas=""
+var int sd_lastTimeElmas=na
+var string sd_lastDayAltin=""
+var int sd_lastTimeAltin=na
+
+// REPAINT state
+var string sd_lastDayOrigRepaint=""
+var int sd_lastTimeOrigRepaint=na
+var string sd_lastDayAdvRepaint=""
+var int sd_lastTimeAdvRepaint=na
+var string sd_lastDayElmasRepaint=""
+var int sd_lastTimeElmasRepaint=na
+var string sd_lastDayAltinRepaint=""
+var int sd_lastTimeAltinRepaint=na
+
+// UPGRADE tracking (snapshot of first signal for comparison)
+var string sd_upgradeDay=""
+var bool sd_upgradeConf_sent=false
+var bool sd_upgradeRepaint_sent=false
+var bool sd_snap_conf_set=false
+var int sd_snap_momentumConf=na
+var int sd_snap_patlamaConf=na
+var int sd_snap_secimConf=na
+var bool sd_snap_squeezeConf=false
+var bool sd_snap_nearBreakConf=false
+var bool sd_snap_repaint_set=false
+var int sd_snap_momentumRepaint=na
+var int sd_snap_patlamaRepaint=na
+var int sd_snap_secimRepaint=na
+var bool sd_snap_squeezeRepaint=false
+var bool sd_snap_nearBreakRepaint=false
+
+// Intrabar REPAINT lock (prevent multiple triggers on same bar)
+var int sd_lastRepaintAlertBar=na
+
+f_sd_allow(ev,dayRef,tRef,useDailyOnce,cooldownMs)=>
+    allow=ev
+    if allow and useDailyOnce
+        allow:=dayRef!=sd_currDay
+    if allow and cooldownMs>0
+        allow:=na(tRef) or (time-tRef>cooldownMs)
+    allow
+
+// CONFIRMED allows (with dailyOnce and overextension filter for Altın/Elmas)
+// CONFIRMED should only trigger when daily bar IS confirmed (after market close)
+sd_allowOrigConf=sd_enable and sd_enableD1Conf and sd_includeOrigConf and sd_liqOk and sd_d1_origConf and sd_isDailyConfirmed and f_sd_allow(true,sd_lastDayOrigConf,sd_lastTimeOrigConf,sd_dailyOnce,sd_cooldownMs)
+sd_allowAdvConf=sd_enable and sd_enableD1Conf and sd_includeAdvConf and sd_liqOk and sd_d1_advConf and sd_isDailyConfirmed and f_sd_allow(true,sd_lastDayAdvConf,sd_lastTimeAdvConf,sd_dailyOnce,sd_cooldownMs)
+sd_allowElmasConf=sd_enable and sd_enableD1Conf and sd_divEnable and sd_liqOk and sd_d1_elmas and sd_isDailyConfirmed and (not sd_overextendedConf) and f_sd_allow(true,sd_lastDayElmas,sd_lastTimeElmas,sd_dailyOnce,sd_cooldownMs)
+sd_allowAltinConf=sd_enable and sd_enableD1Conf and sd_divEnable and sd_liqOk and sd_d1_altin and sd_isDailyConfirmed and (not sd_overextendedConf) and f_sd_allow(true,sd_lastDayAltin,sd_lastTimeAltin,sd_dailyOnce,sd_cooldownMs)
+
+// REPAINT allows (with dailyOnce option, cooldown and 2-bar stability, with impulse filter for ALL types)
+// İtici Güç (impulse) required for ALL REPAINT signals
+// REPAINT should only trigger when daily bar is NOT confirmed (before market close)
+sd_allowOrigRepaint=sd_enable and sd_enableD0Repaint and sd_includeOrigRepaint and sd_liqOk and sd_d0_origConf_stable and sd_impulseOk and (not sd_isDailyConfirmed) and f_sd_allow(true,sd_lastDayOrigRepaint,sd_lastTimeOrigRepaint,sd_dailyOnceRepaint,sd_cooldownMsRepaint)
+sd_allowAdvRepaint=sd_enable and sd_enableD0Repaint and sd_includeAdvRepaint and sd_liqOk and sd_d0_advConf_stable and sd_impulseOk and (not sd_isDailyConfirmed) and f_sd_allow(true,sd_lastDayAdvRepaint,sd_lastTimeAdvRepaint,sd_dailyOnceRepaint,sd_cooldownMsRepaint)
+sd_allowElmasRepaint=sd_enable and sd_enableD0Repaint and sd_divEnable and sd_includeElmasRepaint and sd_liqOk and sd_d0_elmas_stable and sd_impulseOk and (not sd_isDailyConfirmed) and (not sd_overextendedRepaint) and f_sd_allow(true,sd_lastDayElmasRepaint,sd_lastTimeElmasRepaint,sd_dailyOnceRepaint,sd_cooldownMsRepaint)
+sd_allowAltinRepaint=sd_enable and sd_enableD0Repaint and sd_divEnable and sd_includeAltinRepaint and sd_liqOk and sd_d0_altin_stable and sd_impulseOk and (not sd_isDailyConfirmed) and (not sd_overextendedRepaint) and f_sd_allow(true,sd_lastDayAltinRepaint,sd_lastTimeAltinRepaint,sd_dailyOnceRepaint,sd_cooldownMsRepaint)
+
+// Conflict resolution: If both REPAINT and CONFIRMED would fire for same analysis type, only emit CONFIRMED
+// Apply to ALL analysis types: SuperDip Orijinal, SuperDip Gelişmiş, Elmas, Altın
+sd_origConflict=sd_allowOrigConf and sd_allowOrigRepaint
+sd_advConflict=sd_allowAdvConf and sd_allowAdvRepaint
+sd_elmasConflict=sd_allowElmasConf and sd_allowElmasRepaint
+sd_altinConflict=sd_allowAltinConf and sd_allowAltinRepaint
+
+// Suppress REPAINT if CONFIRMED will fire for the same analysis type
+if sd_origConflict
+    sd_allowOrigRepaint:=false
+if sd_advConflict
+    sd_allowAdvRepaint:=false
+if sd_elmasConflict
+    sd_allowElmasRepaint:=false
+if sd_altinConflict
+    sd_allowAltinRepaint:=false
+
+// Suppress Orijinal if Gelişmiş fires (Gelişmiş has priority)
+// Apply to both REPAINT and CONFIRMED
+if sd_allowAdvRepaint
+    sd_allowOrigRepaint:=false
+if sd_allowAdvConf
+    sd_allowOrigConf:=false
+
+// Calculate Patlama Score (0-10) from SQUEEZE, NearBreak, and ATR metrics
+f_sd_patlamaScore(bbWidthPct, distToHighPct, atrPct)=>
+    // SQUEEZE score (0-4): BBWidth%
+    squeezeScore = bbWidthPct <= 6.0 ? 4 : (bbWidthPct <= 8.0 ? 3 : (bbWidthPct <= 10.0 ? 2 : (bbWidthPct <= 12.0 ? 1 : 0)))
+    // NearBreak score (0-4): Distance to 10D high %
+    nearBreakScore = distToHighPct <= 0.5 ? 4 : (distToHighPct <= 1.5 ? 3 : (distToHighPct <= 2.0 ? 2 : (distToHighPct <= 3.0 ? 1 : 0)))
+    // ATR score (0-2): Volatility %
+    atrScore = (atrPct >= 2.0 and atrPct <= 4.5) ? 2 : ((atrPct >= 1.2 and atrPct < 2.0) or (atrPct > 4.5 and atrPct <= 6.5) ? 1 : 0)
+    squeezeScore + nearBreakScore + atrScore
+
+// Calculate Momentum Score (0-4) from existing message indicators
+// Each flag contributes +1: RSI 3 BAR↑, OBV↑, ITICI GUC OK, GUCLU YESIL MUM
+f_sd_momentumScore(rsiUp3, cObv, impulseOk, strongGreen)=>
+    score = 0
+    flags = ""
+    if rsiUp3
+        score += 1
+        flags += "RSI↑, "
+    if cObv
+        score += 1
+        flags += "OBV↑, "
+    if impulseOk
+        score += 1
+        flags += "ITICI, "
+    if strongGreen
+        score += 1
+        flags += "YESIL MUM, "
+    // Remove trailing comma and space
+    flags := flags != "" ? str.substring(flags, 0, str.length(flags) - 2) : ""
+    [score, flags]
+
+// Build UPGRADE message (compact format showing only changed metrics)
+f_sd_buildUpgradeMsg(isConfirmed, tiplerStr, price, todayPct, liqM, oldMomentum, newMomentum, oldPatlama, newPatlama, oldSecim, newSecim, oldSqueeze, newSqueeze, oldNearBreak, newNearBreak, bbWidthPct, distToHighPct, target, stop)=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    label = isConfirmed ? "CONFIRMED" : "REPAINT"
+    lines=array.new_string()
+    array.push(lines,"🔄 "+tickerClean+" | SUPERDIP UPGRADE | "+label)
+    if tiplerStr != ""
+        array.push(lines,"TIPLER: "+tiplerStr)
+    array.push(lines,"Fiyat: "+str.tostring(price,format.mintick)+" ₺")
+    array.push(lines,"")
+    
+    todayWarn = todayPct > 3.0 ? " | YÜKSEK=GEÇ KALMIŞ OLABİLİR" : ""
+    array.push(lines,"BUGÜN: "+str.tostring(todayPct,"#.##")+"% (O→C)"+todayWarn)
+    array.push(lines,"LİKİDİTE: "+str.tostring(liqM,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    // Show changes
+    if newMomentum > oldMomentum
+        array.push(lines,"MOMENTUM: "+str.tostring(oldMomentum)+"→"+str.tostring(newMomentum)+"/4 ⬆")
+    if newPatlama > oldPatlama
+        array.push(lines,"PATLAMA: "+str.tostring(oldPatlama)+"→"+str.tostring(newPatlama)+"/10 ⬆")
+    if newSecim > oldSecim
+        array.push(lines,"SEÇIM PUANI: "+str.tostring(oldSecim)+"→"+str.tostring(newSecim)+"/100 ⬆")
+    
+    squeezeChanged = oldSqueeze != newSqueeze
+    nearBreakChanged = oldNearBreak != newNearBreak
+    if squeezeChanged or nearBreakChanged
+        array.push(lines,"")
+        if squeezeChanged
+            squeezeOldStr = oldSqueeze ? "VAR" : "YOK"
+            squeezeNewStr = newSqueeze ? "VAR" : "YOK"
+            array.push(lines,"SQUEEZE: "+squeezeOldStr+"→"+squeezeNewStr+" (BBWidth: "+str.tostring(bbWidthPct,"#.##")+"%)")
+        if nearBreakChanged
+            nearBreakOldStr = oldNearBreak ? "EVET" : "HAYIR"
+            nearBreakNewStr = newNearBreak ? "EVET" : "HAYIR"
+            array.push(lines,"KIRILIMA YAKIN: "+nearBreakOldStr+"→"+nearBreakNewStr+" (Zirveye: "+str.tostring(distToHighPct,"#.##")+"%)")
+    
+    array.push(lines,"")
+    array.push(lines,"🎯 HEDEF: "+str.tostring(target,format.mintick)+" ₺")
+    if sd_showExtraTargets
+        targetDist = target - price
+        hedef2 = price + targetDist * 1.5
+        hedef3 = price + targetDist * 2.5
+        array.push(lines,"🎯 HEDEF2: "+str.tostring(hedef2,format.mintick)+" ₺")
+        array.push(lines,"🎯 HEDEF3: "+str.tostring(hedef3,format.mintick)+" ₺")
+    array.push(lines,"🛑 STOP: "+str.tostring(stop,format.mintick)+" ₺")
+    array.join(lines,"\n")
+
+f_sd_buildOrigMsg()=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    lines=array.new_string()
+    array.push(lines,"📈 "+tickerClean+" | SUPERDIP ORJİNAL | CONFIRMED")
+    array.push(lines,"Fiyat: "+str.tostring(sd_entry_d1,format.mintick)+" ₺")
+    array.push(lines,"")
+    array.push(lines,"Etiket: SUPERDIP ORJİNAL")
+    array.push(lines,"Öncelik: YÜKSEK")
+    array.push(lines,"Skor: "+str.tostring(sd_score_d1)+"/9")
+    secimPuani=math.round((sd_score_d1/9.0)*100.0)
+    array.push(lines,"Seçim Puanı: "+str.tostring(secimPuani)+"/100")
+    array.push(lines,"")
+    
+    // Build reason line with technical indicators
+    reasonParts=array.new_string()
+    array.push(reasonParts,"🔍 52 haftalık dip içinde (%"+str.tostring(sd_dipDistPct_d1,"#.##")+")")
+    if sd_rsi_d1>=30 and sd_rsi_d1<=50
+        array.push(reasonParts,"RSI 30-50↑")
+    if sd_rsiUp3_d1
+        array.push(reasonParts,"RSI 3 bar↑")
+    if sd_cObv_d1
+        array.push(reasonParts,"OBV↑")
+    if sd_cAdx_d1
+        array.push(reasonParts,"ADX>15")
+    if sd_cBb_d1
+        array.push(reasonParts,"Bollinger alt banda yakın")
+    if sd_strongGreen_d1
+        array.push(reasonParts,"Güçlü yeşil mum")
+    if sd_cEma_d1
+        array.push(reasonParts,"EMA sıralaması pozitif")
+    
+    reasonLine=""
+    for i=0 to array.size(reasonParts)-1
+        reasonLine+=array.get(reasonParts,i)
+        if i<array.size(reasonParts)-1
+            reasonLine+=" | "
+    array.push(lines,reasonLine)
+    array.push(lines,"")
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics
+    squeezeStr=sd_squeezeOk_d1?"VAR":"YOK"
+    nearBreakStr=sd_nearBreakOk_d1?"EVET":"HAYIR"
+    patlamaScore=f_sd_patlamaScore(sd_bbWidthPct_d1,sd_distToHighPct_d1,sd_atrPct_d1)
+    squeezeSc=sd_bbWidthPct_d1<=6.0?4:(sd_bbWidthPct_d1<=8.0?3:(sd_bbWidthPct_d1<=10.0?2:(sd_bbWidthPct_d1<=12.0?1:0)))
+    nearBreakSc=sd_distToHighPct_d1<=0.5?4:(sd_distToHighPct_d1<=1.5?3:(sd_distToHighPct_d1<=2.0?2:(sd_distToHighPct_d1<=3.0?1:0)))
+    atrSc=(sd_atrPct_d1>=2.0 and sd_atrPct_d1<=4.5)?2:((sd_atrPct_d1>=1.2 and sd_atrPct_d1<2.0) or (sd_atrPct_d1>4.5 and sd_atrPct_d1<=6.5)?1:0)
+    array.push(lines,"PATLAMA SKORU: "+str.tostring(patlamaScore)+"/10 (S:"+str.tostring(squeezeSc)+" N:"+str.tostring(nearBreakSc)+" V:"+str.tostring(atrSc)+")")
+    array.push(lines,"SQUEEZE: "+squeezeStr+" (BBWidth: "+str.tostring(sd_bbWidthPct_d1,"#.##")+"% | DÜŞÜK=SIKIŞMA=PATLAMA ADAYI)")
+    array.push(lines,"KIRILIMA YAKIN: "+nearBreakStr+" ("+str.tostring(sd_nearBreakN)+"G zirveye: "+str.tostring(sd_distToHighPct_d1,"#.##")+"% | DÜŞÜK=DİRENÇE YAKIN)")
+    array.push(lines,"VOLATİLİTE: "+str.tostring(sd_atrPct_d1,"#.##")+"% (ATR%)")
+    array.push(lines,"")
+    
+    // BUGUN% and LIKIDITE
+    bugunkiHareket=sd_todayMovePct_d1>0.0?"+"+str.tostring(sd_todayMovePct_d1,"#.##"):str.tostring(sd_todayMovePct_d1,"#.##")
+    array.push(lines,"BUGÜN: "+bugunkiHareket+"% (O→C) | "+(sd_todayMovePct_d1>3.0?"YÜKSEK=GEÇ KALMIŞ OLABİLİR":""))
+    likiditeMil=sd_turnTL_d1/1000000.0
+    array.push(lines,"LİKİDİTE: "+str.tostring(likiditeMil,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    array.push(lines,"🎯 Hedef: "+str.tostring(sd_target_d1,format.mintick)+" ("+str.tostring(sd_tpPct_d1,"#.##")+"%)")
+    if sd_showExtraTargets
+        targetDist = sd_target_d1 - sd_entry_d1
+        hedef2 = sd_entry_d1 + targetDist * 1.5
+        hedef3 = sd_entry_d1 + targetDist * 2.5
+        hedef2Pct = ((hedef2 / sd_entry_d1) - 1.0) * 100.0
+        hedef3Pct = ((hedef3 / sd_entry_d1) - 1.0) * 100.0
+        array.push(lines,"🎯 Hedef2: "+str.tostring(hedef2,format.mintick)+" ("+str.tostring(hedef2Pct,"#.##")+"%)")
+        array.push(lines,"🎯 Hedef3: "+str.tostring(hedef3,format.mintick)+" ("+str.tostring(hedef3Pct,"#.##")+"%)")
+    array.push(lines,"🛑 Stop: "+str.tostring(sd_stop_d1,format.mintick)+" ("+str.tostring(sd_slPct_d1,"#.##")+"%)")
+    f_lineJoin(lines)
+
+f_sd_buildOrigRepaintMsg()=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    lines=array.new_string()
+    array.push(lines,"📈 "+tickerClean+" | SUPERDIP ORJİNAL | REPAINT")
+    array.push(lines,"Fiyat: "+str.tostring(sd_entry,format.mintick)+" ₺")
+    array.push(lines,"")
+    array.push(lines,"Etiket: SUPERDIP ORJİNAL")
+    array.push(lines,"Öncelik: ORTA (REPAINT)")
+    array.push(lines,"Skor: "+str.tostring(sd_score)+"/9")
+    secimPuani=math.round((sd_score/9.0)*100.0)
+    array.push(lines,"Seçim Puanı: "+str.tostring(secimPuani)+"/100")
+    array.push(lines,"")
+    
+    // Build reason line with technical indicators
+    reasonParts=array.new_string()
+    array.push(reasonParts,"🔍 52 haftalık dip içinde (%"+str.tostring(sd_dipDistPct,"#.##")+")")
+    if sd_rsi>=30 and sd_rsi<=50
+        array.push(reasonParts,"RSI 30-50↑")
+    if sd_rsiUp3
+        array.push(reasonParts,"RSI 3 bar↑")
+    if sd_cObv
+        array.push(reasonParts,"OBV↑")
+    if sd_cAdx
+        array.push(reasonParts,"ADX>15")
+    if sd_cBb
+        array.push(reasonParts,"Bollinger alt banda yakın")
+    if sd_impulseOk
+        array.push(reasonParts,"İtici güç OK")
+    if sd_strongGreen
+        array.push(reasonParts,"Güçlü yeşil mum")
+    if sd_cEma
+        array.push(reasonParts,"EMA sıralaması pozitif")
+    
+    reasonLine=""
+    for i=0 to array.size(reasonParts)-1
+        reasonLine+=array.get(reasonParts,i)
+        if i<array.size(reasonParts)-1
+            reasonLine+=" | "
+    array.push(lines,reasonLine)
+    array.push(lines,"")
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics
+    squeezeStr=sd_squeezeOk?"VAR":"YOK"
+    nearBreakStr=sd_nearBreakOk?"EVET":"HAYIR"
+    patlamaScore=f_sd_patlamaScore(sd_bbWidthPct,sd_distToHighPct,sd_atrPct)
+    squeezeSc=sd_bbWidthPct<=6.0?4:(sd_bbWidthPct<=8.0?3:(sd_bbWidthPct<=10.0?2:(sd_bbWidthPct<=12.0?1:0)))
+    nearBreakSc=sd_distToHighPct<=0.5?4:(sd_distToHighPct<=1.5?3:(sd_distToHighPct<=2.0?2:(sd_distToHighPct<=3.0?1:0)))
+    atrSc=(sd_atrPct>=2.0 and sd_atrPct<=4.5)?2:((sd_atrPct>=1.2 and sd_atrPct<2.0) or (sd_atrPct>4.5 and sd_atrPct<=6.5)?1:0)
+    array.push(lines,"PATLAMA SKORU: "+str.tostring(patlamaScore)+"/10 (S:"+str.tostring(squeezeSc)+" N:"+str.tostring(nearBreakSc)+" V:"+str.tostring(atrSc)+")")
+    array.push(lines,"SQUEEZE: "+squeezeStr+" (BBWidth: "+str.tostring(sd_bbWidthPct,"#.##")+"% | DÜŞÜK=SIKIŞMA=PATLAMA ADAYI)")
+    array.push(lines,"KIRILIMA YAKIN: "+nearBreakStr+" ("+str.tostring(sd_nearBreakN)+"G zirveye: "+str.tostring(sd_distToHighPct,"#.##")+"% | DÜŞÜK=DİRENÇE YAKIN)")
+    array.push(lines,"VOLATİLİTE: "+str.tostring(sd_atrPct,"#.##")+"% (ATR%)")
+    array.push(lines,"")
+    
+    // BUGUN% and LIKIDITE
+    bugunkiHareket=sd_todayMovePct>0.0?"+"+str.tostring(sd_todayMovePct,"#.##"):str.tostring(sd_todayMovePct,"#.##")
+    array.push(lines,"BUGÜN: "+bugunkiHareket+"% (O→C) | "+(sd_todayMovePct>3.0?"YÜKSEK=GEÇ KALMIŞ OLABİLİR":""))
+    likiditeMil=sd_turnTL/1000000.0
+    array.push(lines,"LİKİDİTE: "+str.tostring(likiditeMil,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    array.push(lines,"🎯 Hedef: "+str.tostring(sd_target,format.mintick)+" ("+str.tostring(sd_tpPct,"#.##")+"%)")
+    if sd_showExtraTargets
+        targetDist = sd_target - sd_entry
+        hedef2 = sd_entry + targetDist * 1.5
+        hedef3 = sd_entry + targetDist * 2.5
+        hedef2Pct = ((hedef2 / sd_entry) - 1.0) * 100.0
+        hedef3Pct = ((hedef3 / sd_entry) - 1.0) * 100.0
+        array.push(lines,"🎯 Hedef2: "+str.tostring(hedef2,format.mintick)+" ("+str.tostring(hedef2Pct,"#.##")+"%)")
+        array.push(lines,"🎯 Hedef3: "+str.tostring(hedef3,format.mintick)+" ("+str.tostring(hedef3Pct,"#.##")+"%)")
+    array.push(lines,"🛑 Stop: "+str.tostring(sd_stop,format.mintick)+" ("+str.tostring(sd_slPct,"#.##")+"%)")
+    array.push(lines,"⚠️ NOT: BAR KAPANIS BEKLEYIN - REPAINT OLABILIR")
+    f_lineJoin(lines)
+
+f_sd_buildAdvMsg()=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    lines=array.new_string()
+    array.push(lines,"📈 "+tickerClean+" | SUPERDIP GELİŞMİŞ | CONFIRMED")
+    array.push(lines,"Fiyat: "+str.tostring(sd_entry_d1,format.mintick)+" ₺")
+    array.push(lines,"")
+    array.push(lines,"Etiket: SUPERDIP GELİŞMİŞ")
+    array.push(lines,"Öncelik: ÇOK YÜKSEK")
+    array.push(lines,"Skor (Gelişmiş): "+str.tostring(sd_advScore_d1)+"/11")
+    secimPuani=math.round((sd_advScore_d1/11.0)*100.0)
+    array.push(lines,"Seçim Puanı: "+str.tostring(secimPuani)+"/100")
+    array.push(lines,"")
+    
+    // Build reason line with technical indicators
+    reasonParts=array.new_string()
+    array.push(reasonParts,"🔍 52 haftalık dip içinde (%"+str.tostring(sd_dipDistPct_d1,"#.##")+")")
+    if sd_touched_d1
+        array.push(reasonParts,"Dip teması ✓")
+    if sd_rsi_d1>=30 and sd_rsi_d1<=sd_advRsiMax
+        array.push(reasonParts,"RSI 30-55↑")
+    if sd_rsiUp3_d1
+        array.push(reasonParts,"RSI 3 bar↑")
+    if sd_cObv_d1
+        array.push(reasonParts,"OBV↑")
+    if sd_cAdx_d1
+        array.push(reasonParts,"ADX>15")
+    if sd_cBb_d1
+        array.push(reasonParts,"Bollinger alt banda yakın")
+    if sd_impulseOk_d1
+        array.push(reasonParts,"İtici güç OK")
+    if sd_strongGreen_d1
+        array.push(reasonParts,"Güçlü yeşil mum")
+    if sd_cEma_d1
+        array.push(reasonParts,"EMA sıralaması pozitif")
+    
+    reasonLine=""
+    for i=0 to array.size(reasonParts)-1
+        reasonLine+=array.get(reasonParts,i)
+        if i<array.size(reasonParts)-1
+            reasonLine+=" | "
+    array.push(lines,reasonLine)
+    array.push(lines,"")
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics
+    squeezeStr=sd_squeezeOk_d1?"VAR":"YOK"
+    nearBreakStr=sd_nearBreakOk_d1?"EVET":"HAYIR"
+    patlamaScore=f_sd_patlamaScore(sd_bbWidthPct_d1,sd_distToHighPct_d1,sd_atrPct_d1)
+    squeezeSc=sd_bbWidthPct_d1<=6.0?4:(sd_bbWidthPct_d1<=8.0?3:(sd_bbWidthPct_d1<=10.0?2:(sd_bbWidthPct_d1<=12.0?1:0)))
+    nearBreakSc=sd_distToHighPct_d1<=0.5?4:(sd_distToHighPct_d1<=1.5?3:(sd_distToHighPct_d1<=2.0?2:(sd_distToHighPct_d1<=3.0?1:0)))
+    atrSc=(sd_atrPct_d1>=2.0 and sd_atrPct_d1<=4.5)?2:((sd_atrPct_d1>=1.2 and sd_atrPct_d1<2.0) or (sd_atrPct_d1>4.5 and sd_atrPct_d1<=6.5)?1:0)
+    array.push(lines,"PATLAMA SKORU: "+str.tostring(patlamaScore)+"/10 (S:"+str.tostring(squeezeSc)+" N:"+str.tostring(nearBreakSc)+" V:"+str.tostring(atrSc)+")")
+    array.push(lines,"SQUEEZE: "+squeezeStr+" (BBWidth: "+str.tostring(sd_bbWidthPct_d1,"#.##")+"% | DÜŞÜK=SIKIŞMA=PATLAMA ADAYI)")
+    array.push(lines,"KIRILIMA YAKIN: "+nearBreakStr+" ("+str.tostring(sd_nearBreakN)+"G zirveye: "+str.tostring(sd_distToHighPct_d1,"#.##")+"% | DÜŞÜK=DİRENÇE YAKIN)")
+    array.push(lines,"VOLATİLİTE: "+str.tostring(sd_atrPct_d1,"#.##")+"% (ATR%)")
+    array.push(lines,"")
+    
+    // BUGUN% and LIKIDITE
+    bugunkiHareket=sd_todayMovePct_d1>0.0?"+"+str.tostring(sd_todayMovePct_d1,"#.##"):str.tostring(sd_todayMovePct_d1,"#.##")
+    array.push(lines,"BUGÜN: "+bugunkiHareket+"% (O→C) | "+(sd_todayMovePct_d1>3.0?"YÜKSEK=GEÇ KALMIŞ OLABİLİR":""))
+    likiditeMil=sd_turnTL_d1/1000000.0
+    array.push(lines,"LİKİDİTE: "+str.tostring(likiditeMil,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    array.push(lines,"🎯 Hedef: "+str.tostring(sd_target_d1,format.mintick)+" ("+str.tostring(sd_tpPct_d1,"#.##")+"%)")
+    if sd_showExtraTargets
+        targetDist = sd_target_d1 - sd_entry_d1
+        hedef2 = sd_entry_d1 + targetDist * 1.5
+        hedef3 = sd_entry_d1 + targetDist * 2.5
+        hedef2Pct = ((hedef2 / sd_entry_d1) - 1.0) * 100.0
+        hedef3Pct = ((hedef3 / sd_entry_d1) - 1.0) * 100.0
+        array.push(lines,"🎯 Hedef2: "+str.tostring(hedef2,format.mintick)+" ("+str.tostring(hedef2Pct,"#.##")+"%)")
+        array.push(lines,"🎯 Hedef3: "+str.tostring(hedef3,format.mintick)+" ("+str.tostring(hedef3Pct,"#.##")+"%)")
+    array.push(lines,"🛑 Stop: "+str.tostring(sd_stop_d1,format.mintick)+" ("+str.tostring(sd_slPct_d1,"#.##")+"%)")
+    f_lineJoin(lines)
+
+f_sd_buildAdvRepaintMsg()=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    lines=array.new_string()
+    array.push(lines,"📈 "+tickerClean+" | SUPERDIP GELİŞMİŞ | REPAINT")
+    array.push(lines,"Fiyat: "+str.tostring(sd_entry,format.mintick)+" ₺")
+    array.push(lines,"")
+    array.push(lines,"Etiket: SUPERDIP GELİŞMİŞ")
+    array.push(lines,"Öncelik: YÜKSEK (REPAINT)")
+    array.push(lines,"Skor (Gelişmiş): "+str.tostring(sd_advScore)+"/11")
+    secimPuani=math.round((sd_advScore/11.0)*100.0)
+    array.push(lines,"Seçim Puanı: "+str.tostring(secimPuani)+"/100")
+    array.push(lines,"")
+    
+    // Build reason line with technical indicators
+    reasonParts=array.new_string()
+    array.push(reasonParts,"🔍 52 haftalık dip içinde (%"+str.tostring(sd_dipDistPct,"#.##")+")")
+    if sd_touched
+        array.push(reasonParts,"Dip teması ✓")
+    if sd_rsi>=30 and sd_rsi<=sd_advRsiMax
+        array.push(reasonParts,"RSI 30-55↑")
+    if sd_rsiUp3
+        array.push(reasonParts,"RSI 3 bar↑")
+    if sd_cObv
+        array.push(reasonParts,"OBV↑")
+    if sd_cAdx
+        array.push(reasonParts,"ADX>15")
+    if sd_cBb
+        array.push(reasonParts,"Bollinger alt banda yakın")
+    if sd_impulseOk
+        array.push(reasonParts,"İtici güç OK")
+    if sd_strongGreen
+        array.push(reasonParts,"Güçlü yeşil mum")
+    if sd_cEma
+        array.push(reasonParts,"EMA sıralaması pozitif")
+    
+    reasonLine=""
+    for i=0 to array.size(reasonParts)-1
+        reasonLine+=array.get(reasonParts,i)
+        if i<array.size(reasonParts)-1
+            reasonLine+=" | "
+    array.push(lines,reasonLine)
+    array.push(lines,"")
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics
+    squeezeStr=sd_squeezeOk?"VAR":"YOK"
+    nearBreakStr=sd_nearBreakOk?"EVET":"HAYIR"
+    patlamaScore=f_sd_patlamaScore(sd_bbWidthPct,sd_distToHighPct,sd_atrPct)
+    squeezeSc=sd_bbWidthPct<=6.0?4:(sd_bbWidthPct<=8.0?3:(sd_bbWidthPct<=10.0?2:(sd_bbWidthPct<=12.0?1:0)))
+    nearBreakSc=sd_distToHighPct<=0.5?4:(sd_distToHighPct<=1.5?3:(sd_distToHighPct<=2.0?2:(sd_distToHighPct<=3.0?1:0)))
+    atrSc=(sd_atrPct>=2.0 and sd_atrPct<=4.5)?2:((sd_atrPct>=1.2 and sd_atrPct<2.0) or (sd_atrPct>4.5 and sd_atrPct<=6.5)?1:0)
+    array.push(lines,"PATLAMA SKORU: "+str.tostring(patlamaScore)+"/10 (S:"+str.tostring(squeezeSc)+" N:"+str.tostring(nearBreakSc)+" V:"+str.tostring(atrSc)+")")
+    array.push(lines,"SQUEEZE: "+squeezeStr+" (BBWidth: "+str.tostring(sd_bbWidthPct,"#.##")+"% | DÜŞÜK=SIKIŞMA=PATLAMA ADAYI)")
+    array.push(lines,"KIRILIMA YAKIN: "+nearBreakStr+" ("+str.tostring(sd_nearBreakN)+"G zirveye: "+str.tostring(sd_distToHighPct,"#.##")+"% | DÜŞÜK=DİRENÇE YAKIN)")
+    array.push(lines,"VOLATİLİTE: "+str.tostring(sd_atrPct,"#.##")+"% (ATR%)")
+    array.push(lines,"")
+    
+    // BUGUN% and LIKIDITE
+    bugunkiHareket=sd_todayMovePct>0.0?"+"+str.tostring(sd_todayMovePct,"#.##"):str.tostring(sd_todayMovePct,"#.##")
+    array.push(lines,"BUGÜN: "+bugunkiHareket+"% (O→C) | "+(sd_todayMovePct>3.0?"YÜKSEK=GEÇ KALMIŞ OLABİLİR":""))
+    likiditeMil=sd_turnTL/1000000.0
+    array.push(lines,"LİKİDİTE: "+str.tostring(likiditeMil,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    array.push(lines,"🎯 Hedef: "+str.tostring(sd_target,format.mintick)+" ("+str.tostring(sd_tpPct,"#.##")+"%)")
+    if sd_showExtraTargets
+        targetDist = sd_target - sd_entry
+        hedef2 = sd_entry + targetDist * 1.5
+        hedef3 = sd_entry + targetDist * 2.5
+        hedef2Pct = ((hedef2 / sd_entry) - 1.0) * 100.0
+        hedef3Pct = ((hedef3 / sd_entry) - 1.0) * 100.0
+        array.push(lines,"🎯 Hedef2: "+str.tostring(hedef2,format.mintick)+" ("+str.tostring(hedef2Pct,"#.##")+"%)")
+        array.push(lines,"🎯 Hedef3: "+str.tostring(hedef3,format.mintick)+" ("+str.tostring(hedef3Pct,"#.##")+"%)")
+    array.push(lines,"🛑 Stop: "+str.tostring(sd_stop,format.mintick)+" ("+str.tostring(sd_slPct,"#.##")+"%)")
+    array.push(lines,"⚠️ NOT: BAR KAPANIS BEKLEYIN - REPAINT OLABILIR")
+    f_lineJoin(lines)
+
+f_sd_buildElmasMsg()=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    lines=array.new_string()
+    array.push(lines,"💎 "+tickerClean+" | ELMAS SİNYAL | CONFIRMED")
+    array.push(lines,"Fiyat: "+str.tostring(sd_entry_d1,format.mintick)+" ₺")
+    array.push(lines,"")
+    array.push(lines,"Etiket: ELMAS")
+    array.push(lines,"Öncelik: YÜKSEK")
+    array.push(lines,"Seçim Puanı: "+str.tostring(sd_quality_d1)+"/100")
+    array.push(lines,"Vade: Uzun (1-6+ Ay) | Potansiyel: %50 - %200+")
+    array.push(lines,"")
+    
+    // Build reason line with technical indicators
+    reasonParts=array.new_string()
+    array.push(reasonParts,"🔍 52 haftalık dip içinde (%"+str.tostring(sd_dipDistPct_d1,"#.##")+")")
+    if sd_rsi_d1>=30 and sd_rsi_d1<=50
+        array.push(reasonParts,"RSI 30-50↑")
+    if sd_rsiUp3_d1
+        array.push(reasonParts,"RSI 3 bar↑")
+    if sd_cObv_d1
+        array.push(reasonParts,"OBV↑")
+    if sd_cAdx_d1
+        array.push(reasonParts,"ADX>15")
+    if sd_cBb_d1
+        array.push(reasonParts,"Bollinger alt banda yakın")
+    if sd_impulseOk_d1
+        array.push(reasonParts,"İtici güç OK")
+    if sd_strongGreen_d1
+        array.push(reasonParts,"Güçlü yeşil mum")
+    if sd_cEma_d1
+        array.push(reasonParts,"EMA sıralaması pozitif")
+    
+    reasonLine=""
+    for i=0 to array.size(reasonParts)-1
+        reasonLine+=array.get(reasonParts,i)
+        if i<array.size(reasonParts)-1
+            reasonLine+=" | "
+    array.push(lines,reasonLine)
+    array.push(lines,"")
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics
+    squeezeStr=sd_squeezeOk_d1?"VAR":"YOK"
+    nearBreakStr=sd_nearBreakOk_d1?"EVET":"HAYIR"
+    patlamaScore=f_sd_patlamaScore(sd_bbWidthPct_d1,sd_distToHighPct_d1,sd_atrPct_d1)
+    squeezeSc=sd_bbWidthPct_d1<=6.0?4:(sd_bbWidthPct_d1<=8.0?3:(sd_bbWidthPct_d1<=10.0?2:(sd_bbWidthPct_d1<=12.0?1:0)))
+    nearBreakSc=sd_distToHighPct_d1<=0.5?4:(sd_distToHighPct_d1<=1.5?3:(sd_distToHighPct_d1<=2.0?2:(sd_distToHighPct_d1<=3.0?1:0)))
+    atrSc=(sd_atrPct_d1>=2.0 and sd_atrPct_d1<=4.5)?2:((sd_atrPct_d1>=1.2 and sd_atrPct_d1<2.0) or (sd_atrPct_d1>4.5 and sd_atrPct_d1<=6.5)?1:0)
+    array.push(lines,"PATLAMA SKORU: "+str.tostring(patlamaScore)+"/10 (S:"+str.tostring(squeezeSc)+" N:"+str.tostring(nearBreakSc)+" V:"+str.tostring(atrSc)+")")
+    array.push(lines,"SQUEEZE: "+squeezeStr+" (BBWidth: "+str.tostring(sd_bbWidthPct_d1,"#.##")+"% | DÜŞÜK=SIKIŞMA=PATLAMA ADAYI)")
+    array.push(lines,"KIRILIMA YAKIN: "+nearBreakStr+" ("+str.tostring(sd_nearBreakN)+"G zirveye: "+str.tostring(sd_distToHighPct_d1,"#.##")+"% | DÜŞÜK=DİRENÇE YAKIN)")
+    array.push(lines,"VOLATİLİTE: "+str.tostring(sd_atrPct_d1,"#.##")+"% (ATR%)")
+    array.push(lines,"")
+    
+    
+    // BUGUN% and LIKIDITE
+    bugunkiHareket=sd_todayMovePct_d1>0.0?"+"+str.tostring(sd_todayMovePct_d1,"#.##"):str.tostring(sd_todayMovePct_d1,"#.##")
+    array.push(lines,"BUGÜN: "+bugunkiHareket+"% (O→C) | "+(sd_todayMovePct_d1>3.0?"YÜKSEK=GEÇ KALMIŞ OLABİLİR":""))
+    likiditeMil=sd_turnTL_d1/1000000.0
+    array.push(lines,"LİKİDİTE: "+str.tostring(likiditeMil,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    array.push(lines,"🎯 Hedef: "+str.tostring(sd_target_d1,format.mintick)+" ("+str.tostring(sd_tpPct_d1,"#.##")+"%)")
+    if sd_showExtraTargets
+        targetDist = sd_target_d1 - sd_entry_d1
+        hedef2 = sd_entry_d1 + targetDist * 1.5
+        hedef3 = sd_entry_d1 + targetDist * 2.5
+        hedef2Pct = ((hedef2 / sd_entry_d1) - 1.0) * 100.0
+        hedef3Pct = ((hedef3 / sd_entry_d1) - 1.0) * 100.0
+        array.push(lines,"🎯 Hedef2: "+str.tostring(hedef2,format.mintick)+" ("+str.tostring(hedef2Pct,"#.##")+"%)")
+        array.push(lines,"🎯 Hedef3: "+str.tostring(hedef3,format.mintick)+" ("+str.tostring(hedef3Pct,"#.##")+"%)")
+    array.push(lines,"🛑 Stop: "+str.tostring(sd_stop_d1,format.mintick)+" ("+str.tostring(sd_slPct_d1,"#.##")+"%)")
+    f_lineJoin(lines)
+
+f_sd_buildElmasRepaintMsg()=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    lines=array.new_string()
+    array.push(lines,"💎 "+tickerClean+" | ELMAS SİNYAL | REPAINT")
+    array.push(lines,"Fiyat: "+str.tostring(sd_entry,format.mintick)+" ₺")
+    array.push(lines,"")
+    array.push(lines,"Etiket: ELMAS")
+    array.push(lines,"Öncelik: ORTA (REPAINT)")
+    array.push(lines,"Seçim Puanı: "+str.tostring(sd_quality)+"/100")
+    array.push(lines,"Vade: Uzun (1-6+ Ay) | Potansiyel: %50 - %200+")
+    array.push(lines,"")
+    
+    // Build reason line with technical indicators
+    reasonParts=array.new_string()
+    array.push(reasonParts,"🔍 52 haftalık dip içinde (%"+str.tostring(sd_dipDistPct,"#.##")+")")
+    if sd_rsi>=30 and sd_rsi<=50
+        array.push(reasonParts,"RSI 30-50↑")
+    if sd_rsiUp3
+        array.push(reasonParts,"RSI 3 bar↑")
+    if sd_cObv
+        array.push(reasonParts,"OBV↑")
+    if sd_cAdx
+        array.push(reasonParts,"ADX>15")
+    if sd_cBb
+        array.push(reasonParts,"Bollinger alt banda yakın")
+    if sd_impulseOk
+        array.push(reasonParts,"İtici güç OK")
+    if sd_strongGreen
+        array.push(reasonParts,"Güçlü yeşil mum")
+    if sd_cEma
+        array.push(reasonParts,"EMA sıralaması pozitif")
+    
+    reasonLine=""
+    for i=0 to array.size(reasonParts)-1
+        reasonLine+=array.get(reasonParts,i)
+        if i<array.size(reasonParts)-1
+            reasonLine+=" | "
+    array.push(lines,reasonLine)
+    array.push(lines,"")
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics
+    squeezeStr=sd_squeezeOk?"VAR":"YOK"
+    nearBreakStr=sd_nearBreakOk?"EVET":"HAYIR"
+    patlamaScore=f_sd_patlamaScore(sd_bbWidthPct,sd_distToHighPct,sd_atrPct)
+    squeezeSc=sd_bbWidthPct<=6.0?4:(sd_bbWidthPct<=8.0?3:(sd_bbWidthPct<=10.0?2:(sd_bbWidthPct<=12.0?1:0)))
+    nearBreakSc=sd_distToHighPct<=0.5?4:(sd_distToHighPct<=1.5?3:(sd_distToHighPct<=2.0?2:(sd_distToHighPct<=3.0?1:0)))
+    atrSc=(sd_atrPct>=2.0 and sd_atrPct<=4.5)?2:((sd_atrPct>=1.2 and sd_atrPct<2.0) or (sd_atrPct>4.5 and sd_atrPct<=6.5)?1:0)
+    array.push(lines,"PATLAMA SKORU: "+str.tostring(patlamaScore)+"/10 (S:"+str.tostring(squeezeSc)+" N:"+str.tostring(nearBreakSc)+" V:"+str.tostring(atrSc)+")")
+    array.push(lines,"SQUEEZE: "+squeezeStr+" (BBWidth: "+str.tostring(sd_bbWidthPct,"#.##")+"% | DÜŞÜK=SIKIŞMA=PATLAMA ADAYI)")
+    array.push(lines,"KIRILIMA YAKIN: "+nearBreakStr+" ("+str.tostring(sd_nearBreakN)+"G zirveye: "+str.tostring(sd_distToHighPct,"#.##")+"% | DÜŞÜK=DİRENÇE YAKIN)")
+    array.push(lines,"VOLATİLİTE: "+str.tostring(sd_atrPct,"#.##")+"% (ATR%)")
+    array.push(lines,"")
+    
+    
+    // BUGUN% and LIKIDITE
+    bugunkiHareket=sd_todayMovePct>0.0?"+"+str.tostring(sd_todayMovePct,"#.##"):str.tostring(sd_todayMovePct,"#.##")
+    array.push(lines,"BUGÜN: "+bugunkiHareket+"% (O→C) | "+(sd_todayMovePct>3.0?"YÜKSEK=GEÇ KALMIŞ OLABİLİR":""))
+    likiditeMil=sd_turnTL/1000000.0
+    array.push(lines,"LİKİDİTE: "+str.tostring(likiditeMil,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    array.push(lines,"🎯 Hedef: "+str.tostring(sd_target,format.mintick)+" ("+str.tostring(sd_tpPct,"#.##")+"%)")
+    if sd_showExtraTargets
+        targetDist = sd_target - sd_entry
+        hedef2 = sd_entry + targetDist * 1.5
+        hedef3 = sd_entry + targetDist * 2.5
+        hedef2Pct = ((hedef2 / sd_entry) - 1.0) * 100.0
+        hedef3Pct = ((hedef3 / sd_entry) - 1.0) * 100.0
+        array.push(lines,"🎯 Hedef2: "+str.tostring(hedef2,format.mintick)+" ("+str.tostring(hedef2Pct,"#.##")+"%)")
+        array.push(lines,"🎯 Hedef3: "+str.tostring(hedef3,format.mintick)+" ("+str.tostring(hedef3Pct,"#.##")+"%)")
+    array.push(lines,"🛑 Stop: "+str.tostring(sd_stop,format.mintick)+" ("+str.tostring(sd_slPct,"#.##")+"%)")
+    array.push(lines,"⚠️ NOT: BAR KAPANIS BEKLEYIN - REPAINT OLABILIR")
+    f_lineJoin(lines)
+
+f_sd_buildAltinMsg()=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    lines=array.new_string()
+    array.push(lines,"🔥 "+tickerClean+" | ALTIN SİNYAL | CONFIRMED")
+    array.push(lines,"Fiyat: "+str.tostring(sd_entry_d1,format.mintick)+" ₺")
+    array.push(lines,"")
+    array.push(lines,"Etiket: ALTIN")
+    array.push(lines,"Öncelik: YÜKSEK")
+    array.push(lines,"Seçim Puanı: "+str.tostring(sd_quality_d1)+"/100")
+    array.push(lines,"Vade: Orta (1-4 Hafta) | Potansiyel: %15 - %40")
+    array.push(lines,"")
+    
+    // Build reason line with technical indicators
+    reasonParts=array.new_string()
+    array.push(reasonParts,"🔍 52 haftalık dip içinde (%"+str.tostring(sd_dipDistPct_d1,"#.##")+")")
+    if sd_rsi_d1>=30 and sd_rsi_d1<=50
+        array.push(reasonParts,"RSI 30-50↑")
+    if sd_rsiUp3_d1
+        array.push(reasonParts,"RSI 3 bar↑")
+    if sd_cObv_d1
+        array.push(reasonParts,"OBV↑")
+    if sd_cAdx_d1
+        array.push(reasonParts,"ADX>15")
+    if sd_cBb_d1
+        array.push(reasonParts,"Bollinger alt banda yakın")
+    if sd_impulseOk_d1
+        array.push(reasonParts,"İtici güç OK")
+    if sd_strongGreen_d1
+        array.push(reasonParts,"Güçlü yeşil mum")
+    if sd_cEma_d1
+        array.push(reasonParts,"EMA sıralaması pozitif")
+    
+    reasonLine=""
+    for i=0 to array.size(reasonParts)-1
+        reasonLine+=array.get(reasonParts,i)
+        if i<array.size(reasonParts)-1
+            reasonLine+=" | "
+    array.push(lines,reasonLine)
+    array.push(lines,"")
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics
+    squeezeStr=sd_squeezeOk_d1?"VAR":"YOK"
+    nearBreakStr=sd_nearBreakOk_d1?"EVET":"HAYIR"
+    patlamaScore=f_sd_patlamaScore(sd_bbWidthPct_d1,sd_distToHighPct_d1,sd_atrPct_d1)
+    squeezeSc=sd_bbWidthPct_d1<=6.0?4:(sd_bbWidthPct_d1<=8.0?3:(sd_bbWidthPct_d1<=10.0?2:(sd_bbWidthPct_d1<=12.0?1:0)))
+    nearBreakSc=sd_distToHighPct_d1<=0.5?4:(sd_distToHighPct_d1<=1.5?3:(sd_distToHighPct_d1<=2.0?2:(sd_distToHighPct_d1<=3.0?1:0)))
+    atrSc=(sd_atrPct_d1>=2.0 and sd_atrPct_d1<=4.5)?2:((sd_atrPct_d1>=1.2 and sd_atrPct_d1<2.0) or (sd_atrPct_d1>4.5 and sd_atrPct_d1<=6.5)?1:0)
+    array.push(lines,"PATLAMA SKORU: "+str.tostring(patlamaScore)+"/10 (S:"+str.tostring(squeezeSc)+" N:"+str.tostring(nearBreakSc)+" V:"+str.tostring(atrSc)+")")
+    array.push(lines,"SQUEEZE: "+squeezeStr+" (BBWidth: "+str.tostring(sd_bbWidthPct_d1,"#.##")+"% | DÜŞÜK=SIKIŞMA=PATLAMA ADAYI)")
+    array.push(lines,"KIRILIMA YAKIN: "+nearBreakStr+" ("+str.tostring(sd_nearBreakN)+"G zirveye: "+str.tostring(sd_distToHighPct_d1,"#.##")+"% | DÜŞÜK=DİRENÇE YAKIN)")
+    array.push(lines,"VOLATİLİTE: "+str.tostring(sd_atrPct_d1,"#.##")+"% (ATR%)")
+    array.push(lines,"")
+    
+    
+    // BUGUN% and LIKIDITE
+    bugunkiHareket=sd_todayMovePct_d1>0.0?"+"+str.tostring(sd_todayMovePct_d1,"#.##"):str.tostring(sd_todayMovePct_d1,"#.##")
+    array.push(lines,"BUGÜN: "+bugunkiHareket+"% (O→C) | "+(sd_todayMovePct_d1>3.0?"YÜKSEK=GEÇ KALMIŞ OLABİLİR":""))
+    likiditeMil=sd_turnTL_d1/1000000.0
+    array.push(lines,"LİKİDİTE: "+str.tostring(likiditeMil,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    array.push(lines,"🎯 Hedef: "+str.tostring(sd_target_d1,format.mintick)+" ("+str.tostring(sd_tpPct_d1,"#.##")+"%)")
+    if sd_showExtraTargets
+        targetDist = sd_target_d1 - sd_entry_d1
+        hedef2 = sd_entry_d1 + targetDist * 1.5
+        hedef3 = sd_entry_d1 + targetDist * 2.5
+        hedef2Pct = ((hedef2 / sd_entry_d1) - 1.0) * 100.0
+        hedef3Pct = ((hedef3 / sd_entry_d1) - 1.0) * 100.0
+        array.push(lines,"🎯 Hedef2: "+str.tostring(hedef2,format.mintick)+" ("+str.tostring(hedef2Pct,"#.##")+"%)")
+        array.push(lines,"🎯 Hedef3: "+str.tostring(hedef3,format.mintick)+" ("+str.tostring(hedef3Pct,"#.##")+"%)")
+    array.push(lines,"🛑 Stop: "+str.tostring(sd_stop_d1,format.mintick)+" ("+str.tostring(sd_slPct_d1,"#.##")+"%)")
+    f_lineJoin(lines)
+
+f_sd_buildAltinRepaintMsg()=>
+    tickerClean=str.replace(syminfo.ticker,"BIST:","")
+    lines=array.new_string()
+    array.push(lines,"🔥 "+tickerClean+" | ALTIN SİNYAL | REPAINT")
+    array.push(lines,"Fiyat: "+str.tostring(sd_entry,format.mintick)+" ₺")
+    array.push(lines,"")
+    array.push(lines,"Etiket: ALTIN")
+    array.push(lines,"Öncelik: ORTA (REPAINT)")
+    array.push(lines,"Seçim Puanı: "+str.tostring(sd_quality)+"/100")
+    array.push(lines,"Vade: Orta (1-4 Hafta) | Potansiyel: %15 - %40")
+    array.push(lines,"")
+    
+    // Build reason line with technical indicators
+    reasonParts=array.new_string()
+    array.push(reasonParts,"🔍 52 haftalık dip içinde (%"+str.tostring(sd_dipDistPct,"#.##")+")")
+    if sd_rsi>=30 and sd_rsi<=50
+        array.push(reasonParts,"RSI 30-50↑")
+    if sd_rsiUp3
+        array.push(reasonParts,"RSI 3 bar↑")
+    if sd_cObv
+        array.push(reasonParts,"OBV↑")
+    if sd_cAdx
+        array.push(reasonParts,"ADX>15")
+    if sd_cBb
+        array.push(reasonParts,"Bollinger alt banda yakın")
+    if sd_impulseOk
+        array.push(reasonParts,"İtici güç OK")
+    if sd_strongGreen
+        array.push(reasonParts,"Güçlü yeşil mum")
+    if sd_cEma
+        array.push(reasonParts,"EMA sıralaması pozitif")
+    
+    reasonLine=""
+    for i=0 to array.size(reasonParts)-1
+        reasonLine+=array.get(reasonParts,i)
+        if i<array.size(reasonParts)-1
+            reasonLine+=" | "
+    array.push(lines,reasonLine)
+    array.push(lines,"")
+    
+    // Patlama Yakınlığı (Breakout Proximity) metrics
+    squeezeStr=sd_squeezeOk?"VAR":"YOK"
+    nearBreakStr=sd_nearBreakOk?"EVET":"HAYIR"
+    patlamaScore=f_sd_patlamaScore(sd_bbWidthPct,sd_distToHighPct,sd_atrPct)
+    squeezeSc=sd_bbWidthPct<=6.0?4:(sd_bbWidthPct<=8.0?3:(sd_bbWidthPct<=10.0?2:(sd_bbWidthPct<=12.0?1:0)))
+    nearBreakSc=sd_distToHighPct<=0.5?4:(sd_distToHighPct<=1.5?3:(sd_distToHighPct<=2.0?2:(sd_distToHighPct<=3.0?1:0)))
+    atrSc=(sd_atrPct>=2.0 and sd_atrPct<=4.5)?2:((sd_atrPct>=1.2 and sd_atrPct<2.0) or (sd_atrPct>4.5 and sd_atrPct<=6.5)?1:0)
+    array.push(lines,"PATLAMA SKORU: "+str.tostring(patlamaScore)+"/10 (S:"+str.tostring(squeezeSc)+" N:"+str.tostring(nearBreakSc)+" V:"+str.tostring(atrSc)+")")
+    array.push(lines,"SQUEEZE: "+squeezeStr+" (BBWidth: "+str.tostring(sd_bbWidthPct,"#.##")+"% | DÜŞÜK=SIKIŞMA=PATLAMA ADAYI)")
+    array.push(lines,"KIRILIMA YAKIN: "+nearBreakStr+" ("+str.tostring(sd_nearBreakN)+"G zirveye: "+str.tostring(sd_distToHighPct,"#.##")+"% | DÜŞÜK=DİRENÇE YAKIN)")
+    array.push(lines,"VOLATİLİTE: "+str.tostring(sd_atrPct,"#.##")+"% (ATR%)")
+    array.push(lines,"")
+    
+    
+    // BUGUN% and LIKIDITE
+    bugunkiHareket=sd_todayMovePct>0.0?"+"+str.tostring(sd_todayMovePct,"#.##"):str.tostring(sd_todayMovePct,"#.##")
+    array.push(lines,"BUGÜN: "+bugunkiHareket+"% (O→C) | "+(sd_todayMovePct>3.0?"YÜKSEK=GEÇ KALMIŞ OLABİLİR":""))
+    likiditeMil=sd_turnTL/1000000.0
+    array.push(lines,"LİKİDİTE: "+str.tostring(likiditeMil,"#.#")+"M TL (Günlük Hacim TL)")
+    array.push(lines,"")
+    
+    array.push(lines,"🎯 Hedef: "+str.tostring(sd_target,format.mintick)+" ("+str.tostring(sd_tpPct,"#.##")+"%)")
+    if sd_showExtraTargets
+        targetDist = sd_target - sd_entry
+        hedef2 = sd_entry + targetDist * 1.5
+        hedef3 = sd_entry + targetDist * 2.5
+        hedef2Pct = ((hedef2 / sd_entry) - 1.0) * 100.0
+        hedef3Pct = ((hedef3 / sd_entry) - 1.0) * 100.0
+        array.push(lines,"🎯 Hedef2: "+str.tostring(hedef2,format.mintick)+" ("+str.tostring(hedef2Pct,"#.##")+"%)")
+        array.push(lines,"🎯 Hedef3: "+str.tostring(hedef3,format.mintick)+" ("+str.tostring(hedef3Pct,"#.##")+"%)")
+    array.push(lines,"🛑 Stop: "+str.tostring(sd_stop,format.mintick)+" ("+str.tostring(sd_slPct,"#.##")+"%)")
+    array.push(lines,"⚠️ NOT: BAR KAPANIS BEKLEYIN - REPAINT OLABILIR")
+    f_lineJoin(lines)
+
+// Unified SuperDip messaging: combine multiple types into single message
+// Collect triggered types and determine primary message
+sd_triggeredTypes = array.new_string()
+sd_primaryMsg = ""
+sd_primaryType = ""
+sd_primaryConfirmed = false
+
+// Check CONFIRMED signals (CONFIRMED has priority over REPAINT)
+if sd_allowAdvConf
+    array.push(sd_triggeredTypes, "GELISMIS")
+    sd_primaryMsg := f_sd_buildAdvMsg()
+    sd_primaryType := "GELISMIS"
+    sd_primaryConfirmed := true
+else if sd_allowAltinConf
+    array.push(sd_triggeredTypes, "ALTIN")
+    sd_primaryMsg := f_sd_buildAltinMsg()
+    sd_primaryType := "ALTIN"
+    sd_primaryConfirmed := true
+else if sd_allowElmasConf
+    array.push(sd_triggeredTypes, "ELMAS")
+    sd_primaryMsg := f_sd_buildElmasMsg()
+    sd_primaryType := "ELMAS"
+    sd_primaryConfirmed := true
+else if sd_allowOrigConf
+    array.push(sd_triggeredTypes, "ORJINAL")
+    sd_primaryMsg := f_sd_buildOrigMsg()
+    sd_primaryType := "ORJINAL"
+    sd_primaryConfirmed := true
+
+// Check REPAINT signals (only if no CONFIRMED)
+if sd_primaryMsg == ""
+    if sd_allowAdvRepaint
+        array.push(sd_triggeredTypes, "GELISMIS")
+        sd_primaryMsg := f_sd_buildAdvRepaintMsg()
+        sd_primaryType := "GELISMIS"
+    else if sd_allowAltinRepaint
+        array.push(sd_triggeredTypes, "ALTIN")
+        sd_primaryMsg := f_sd_buildAltinRepaintMsg()
+        sd_primaryType := "ALTIN"
+    else if sd_allowElmasRepaint
+        array.push(sd_triggeredTypes, "ELMAS")
+        sd_primaryMsg := f_sd_buildElmasRepaintMsg()
+        sd_primaryType := "ELMAS"
+    else if sd_allowOrigRepaint
+        array.push(sd_triggeredTypes, "ORJINAL")
+        sd_primaryMsg := f_sd_buildOrigRepaintMsg()
+        sd_primaryType := "ORJINAL"
+
+// Add other triggered types (that weren't chosen as primary)
+if sd_primaryType != "GELISMIS"
+    if (sd_primaryConfirmed and sd_allowAdvConf) or (not sd_primaryConfirmed and sd_allowAdvRepaint)
+        array.push(sd_triggeredTypes, "GELISMIS")
+if sd_primaryType != "ALTIN"
+    if (sd_primaryConfirmed and sd_allowAltinConf) or (not sd_primaryConfirmed and sd_allowAltinRepaint)
+        array.push(sd_triggeredTypes, "ALTIN")
+if sd_primaryType != "ELMAS"
+    if (sd_primaryConfirmed and sd_allowElmasConf) or (not sd_primaryConfirmed and sd_allowElmasRepaint)
+        array.push(sd_triggeredTypes, "ELMAS")
+if sd_primaryType != "ORJINAL"
+    if (sd_primaryConfirmed and sd_allowOrigConf) or (not sd_primaryConfirmed and sd_allowOrigRepaint)
+        array.push(sd_triggeredTypes, "ORJINAL")
+
+// Send unified message if any type triggered
+if sd_primaryMsg != ""
+    // Add TIPLER line if multiple types
+    tiplerStr = ""
+    if array.size(sd_triggeredTypes) > 1
+        for i = 0 to array.size(sd_triggeredTypes) - 1
+            tiplerStr += array.get(sd_triggeredTypes, i)
+            if i < array.size(sd_triggeredTypes) - 1
+                tiplerStr += " + "
+        
+        // Insert TIPLER line after Fiyat line (line 1)
+        lines = str.split(sd_primaryMsg, "\n")
+        if array.size(lines) >= 2
+            array.insert(lines, 2, "")
+            array.insert(lines, 2, "TIPLER: " + tiplerStr)
+            sd_primaryMsg := array.join(lines, "\n")
+    
+    // Calculate momentum score (needed for snapshots and optionally for display)
+    momentumSc = 0
+    momentumFlags = ""
+    if sd_primaryConfirmed
+        // For CONFIRMED, impulseOk is not separately tracked, only in repaint
+        [momentumSc, momentumFlags] = f_sd_momentumScore(sd_rsiUp3_d1, sd_cObv_d1, false, sd_strongGreen_d1)
+    else
+        // For REPAINT, include impulseOk
+        [momentumSc, momentumFlags] = f_sd_momentumScore(sd_rsiUp3, sd_cObv, sd_impulseOk, sd_strongGreen)
+    
+    // Add Momentum Score to message if enabled
+    if sd_showMomentumScore
+        lines = str.split(sd_primaryMsg, "\n")
+        // Find Seçim Puanı line and add Momentum Score after it
+        for i = 0 to array.size(lines) - 1
+            if str.contains(array.get(lines, i), "Seçim Puanı:")
+                momentumLine = "MOMENTUM SKORU: " + str.tostring(momentumSc) + "/4"
+                if momentumFlags != ""
+                    momentumLine := momentumLine + " (" + momentumFlags + ")"
+                array.insert(lines, i + 1, momentumLine)
+                break
+        sd_primaryMsg := array.join(lines, "\n")
+    
+    // Calculate scores for SUPERMAN check and snapshot storage (needed for UPGRADE detection)
+    patlamaSkoru = 0
+    secimPuani = 0
+    if sd_primaryConfirmed
+        patlamaSkoru := f_sd_patlamaScore(sd_bbWidthPct_d1, sd_distToHighPct_d1, sd_atrPct_d1)
+        // Calculate secimPuani based on primary type
+        if sd_primaryType == "GELISMIS"
+            secimPuani := math.round((sd_advScore_d1 / 11.0) * 100.0)
+        else if sd_primaryType == "ALTIN" or sd_primaryType == "ELMAS"
+            secimPuani := sd_quality_d1  // Already 0-100 for Altın/Elmas
+        else  // ORJINAL
+            secimPuani := math.round((sd_score_d1 / 9.0) * 100.0)
+    else
+        patlamaSkoru := f_sd_patlamaScore(sd_bbWidthPct, sd_distToHighPct, sd_atrPct)
+        // Calculate secimPuani based on primary type
+        if sd_primaryType == "GELISMIS"
+            secimPuani := math.round((sd_advScore / 11.0) * 100.0)
+        else if sd_primaryType == "ALTIN" or sd_primaryType == "ELMAS"
+            secimPuani := sd_quality  // Already 0-100 for Altın/Elmas
+        else  // ORJINAL
+            secimPuani := math.round((sd_score / 9.0) * 100.0)
+    
+    // ========== SUPERMAN Meta-Signal Detection ==========
+    // Check if this setup qualifies as SUPERMAN (highest priority, lowest risk)
+    isSuperman = false
+    if sd_enableSuperman
+        liqM = sd_primaryConfirmed ? sd_turnTL_d1 / 1000000.0 : sd_turnTL / 1000000.0
+        kirilimaVar = sd_primaryConfirmed ? sd_nearBreakOk_d1 : sd_nearBreakOk
+        squeezeVar = sd_primaryConfirmed ? sd_squeezeOk_d1 : sd_squeezeOk
+        atrPctVal = sd_primaryConfirmed ? sd_atrPct_d1 : sd_atrPct
+        
+        // Core conditions (all mandatory)
+        supermanCore = patlamaSkoru >= sd_supermanPatlamaMin and 
+                       kirilimaVar and 
+                       secimPuani >= sd_supermanSecimMin and 
+                       liqM >= (sd_supermanLiqMin / 1000000.0)
+        
+        // Optional conditions (preferred but not blocking)
+        supermanOptSqueeze = sd_supermanRequireSqueeze ? squeezeVar : true
+        supermanOptAtr = atrPctVal <= sd_supermanAtrMax
+        
+        isSuperman := supermanCore and supermanOptSqueeze
+        // ATR is advisory only - SUPERMAN can still trigger with high ATR but it's noted
+    
+    // If SUPERMAN, replace header
+    if isSuperman
+        lines = str.split(sd_primaryMsg, "\n")
+        if array.size(lines) > 0
+            oldHeader = array.get(lines, 0)
+            // Replace "SUPERDIP X | Y" with "SUPERMAN | SUPERDIP | Y"
+            newHeader = str.replace(oldHeader, "SUPERDIP " + sd_primaryType, "SUPERMAN | SUPERDIP")
+            newHeader := str.replace(newHeader, "📈", "🦸")
+            array.set(lines, 0, newHeader)
+            sd_primaryMsg := array.join(lines, "\n")
+    
+    // ========== Intrabar REPAINT Handling ==========
+    // For REPAINT signals, check if intrabar mode is enabled and this bar hasn't fired yet
+    allowSendNow = true
+    if not sd_primaryConfirmed  // REPAINT
+        if sd_intrabarRepaint
+            // Intrabar mode: send immediately but lock this bar
+            if sd_lastRepaintAlertBar == bar_index
+                allowSendNow := false  // Already sent on this bar
+            else
+                sd_lastRepaintAlertBar := bar_index
+        else
+            // Normal mode: wait for bar confirmation
+            allowSendNow := barstate.isconfirmed
+    // CONFIRMED signals always require daily bar confirmation (already checked in sd_allowXXXConf)
+    
+    // Send the unified message
+    if allowSendNow
+        send_msg(sd_chatId, sd_primaryMsg)
+    
+    // Update timestamps for all triggered types
+    if sd_allowOrigConf or sd_allowOrigRepaint
+        sd_lastDayOrigConf := sd_currDay
+        sd_lastTimeOrigConf := time
+        sd_lastDayOrigRepaint := sd_currDay
+        sd_lastTimeOrigRepaint := time
+    if sd_allowAdvConf or sd_allowAdvRepaint
+        sd_lastDayAdvConf := sd_currDay
+        sd_lastTimeAdvConf := time
+        sd_lastDayAdvRepaint := sd_currDay
+        sd_lastTimeAdvRepaint := time
+    if sd_allowElmasConf or sd_allowElmasRepaint
+        sd_lastDayElmas := sd_currDay
+        sd_lastTimeElmas := time
+        sd_lastDayElmasRepaint := sd_currDay
+        sd_lastTimeElmasRepaint := time
+    if sd_allowAltinConf or sd_allowAltinRepaint
+        sd_lastDayAltin := sd_currDay
+        sd_lastTimeAltin := time
+        sd_lastDayAltinRepaint := sd_currDay
+        sd_lastTimeAltinRepaint := time
+    
+    // Store snapshot for UPGRADE detection
+    if sd_primaryConfirmed
+        // Store CONFIRMED snapshot (using _set flag pattern)
+        if not sd_snap_conf_set
+            sd_snap_momentumConf := momentumSc
+            sd_snap_patlamaConf := patlamaSkoru
+            sd_snap_secimConf := secimPuani
+            sd_snap_squeezeConf := sd_squeezeOk_d1
+            sd_snap_nearBreakConf := sd_nearBreakOk_d1
+            sd_snap_conf_set := true
+    else
+        // Store REPAINT snapshot (using _set flag pattern)
+        if not sd_snap_repaint_set
+            sd_snap_momentumRepaint := momentumSc
+            sd_snap_patlamaRepaint := patlamaSkoru
+            sd_snap_secimRepaint := secimPuani
+            sd_snap_squeezeRepaint := sd_squeezeOk
+            sd_snap_nearBreakRepaint := sd_nearBreakOk
+            sd_snap_repaint_set := true
+    
+    // Reset upgrade tracking on new day
+    if sd_upgradeDay != sd_currDay
+        sd_upgradeDay := sd_currDay
+        sd_upgradeConf_sent := false
+        sd_upgradeRepaint_sent := false
+        sd_snap_conf_set := false
+        sd_snap_repaint_set := false
+
+// --- UPGRADE messaging (check for positive intraday changes) ---
+// Only send if: enabled, not already sent today, and at least one meaningful improvement
+if sd_enable and sd_enableUpgrade
+    // Check CONFIRMED UPGRADE
+    if sd_isDailyConfirmed and not sd_upgradeConf_sent and sd_snap_conf_set
+        // Calculate current metrics
+        curr_momentumConf = 0
+        curr_momentumFlags = ""
+        if sd_showMomentumScore
+            [curr_momentumConf, curr_momentumFlags] = f_sd_momentumScore(sd_rsiUp3_d1, sd_cObv_d1, false, sd_strongGreen_d1)
+        curr_patlamaConf = f_sd_patlamaScore(sd_bbWidthPct_d1, sd_distToHighPct_d1, sd_atrPct_d1)
+        curr_squeezeConf = sd_squeezeOk_d1
+        curr_nearBreakConf = sd_nearBreakOk_d1
+        
+        // Determine primary type and seçim puanı
+        curr_secimConf = 0
+        if sd_d1_advConf
+            curr_secimConf := math.round((sd_advScore_d1 / 11.0) * 100.0)
+        else if sd_d1_altin
+            curr_secimConf := sd_quality_d1
+        else if sd_d1_elmas
+            curr_secimConf := sd_quality_d1
+        else if sd_d1_origConf
+            curr_secimConf := math.round((sd_score_d1 / 9.0) * 100.0)
+        
+        // Check if upgrade worthy
+        momentumUp = (curr_momentumConf - sd_snap_momentumConf) >= sd_upgradeMinMomentum
+        patlamaUp = (curr_patlamaConf - sd_snap_patlamaConf) >= sd_upgradeMinPatlama
+        secimUp = (curr_secimConf - sd_snap_secimConf) >= sd_upgradeMinSecim
+        squeezeUp = (not sd_snap_squeezeConf) and curr_squeezeConf
+        nearBreakUp = (not sd_snap_nearBreakConf) and curr_nearBreakConf
+        
+        if momentumUp or patlamaUp or secimUp or squeezeUp or nearBreakUp
+            // Build TIPLER string
+            upgradeTypes = ""
+            if sd_d1_advConf
+                upgradeTypes += "GELISMIS + "
+            if sd_d1_altin
+                upgradeTypes += "ALTIN + "
+            if sd_d1_elmas
+                upgradeTypes += "ELMAS + "
+            if sd_d1_origConf
+                upgradeTypes += "ORJINAL + "
+            upgradeTypes := upgradeTypes != "" ? str.substring(upgradeTypes, 0, str.length(upgradeTypes) - 3) : ""
+            
+            // Send UPGRADE
+            todayPct = sd_todayMovePct_d1
+            liqM = sd_turnTL_d1 / 1000000.0
+            upgradeMsg = f_sd_buildUpgradeMsg(true, upgradeTypes, sd_entry_d1, todayPct, liqM, sd_snap_momentumConf, curr_momentumConf, sd_snap_patlamaConf, curr_patlamaConf, sd_snap_secimConf, curr_secimConf, sd_snap_squeezeConf, curr_squeezeConf, sd_snap_nearBreakConf, curr_nearBreakConf, sd_bbWidthPct_d1, sd_distToHighPct_d1, sd_target_d1, sd_stop_d1)
+            send_msg(sd_chatId, upgradeMsg)
+            sd_upgradeConf_sent := true
+    
+    // Check REPAINT UPGRADE
+    if (not sd_isDailyConfirmed) and not sd_upgradeRepaint_sent and sd_snap_repaint_set
+        // Calculate current metrics
+        curr_momentumRep = 0
+        curr_momentumFlags = ""
+        if sd_showMomentumScore
+            [curr_momentumRep, curr_momentumFlags] = f_sd_momentumScore(sd_rsiUp3, sd_cObv, sd_impulseOk, sd_strongGreen)
+        curr_patlamaRep = f_sd_patlamaScore(sd_bbWidthPct, sd_distToHighPct, sd_atrPct)
+        curr_squeezeRep = sd_squeezeOk
+        curr_nearBreakRep = sd_nearBreakOk
+        
+        // Determine primary type and seçim puanı
+        curr_secimRep = 0
+        if sd_d0_advConf_stable
+            curr_secimRep := math.round((sd_advScore / 11.0) * 100.0)
+        else if sd_d0_altin_stable
+            curr_secimRep := sd_quality
+        else if sd_d0_elmas_stable
+            curr_secimRep := sd_quality
+        else if sd_d0_origConf_stable
+            curr_secimRep := math.round((sd_score / 9.0) * 100.0)
+        
+        // Check if upgrade worthy
+        momentumUp = (curr_momentumRep - sd_snap_momentumRepaint) >= sd_upgradeMinMomentum
+        patlamaUp = (curr_patlamaRep - sd_snap_patlamaRepaint) >= sd_upgradeMinPatlama
+        secimUp = (curr_secimRep - sd_snap_secimRepaint) >= sd_upgradeMinSecim
+        squeezeUp = (not sd_snap_squeezeRepaint) and curr_squeezeRep
+        nearBreakUp = (not sd_snap_nearBreakRepaint) and curr_nearBreakRep
+        
+        if momentumUp or patlamaUp or secimUp or squeezeUp or nearBreakUp
+            // Build TIPLER string
+            upgradeTypes = ""
+            if sd_d0_advConf_stable
+                upgradeTypes += "GELISMIS + "
+            if sd_d0_altin_stable
+                upgradeTypes += "ALTIN + "
+            if sd_d0_elmas_stable
+                upgradeTypes += "ELMAS + "
+            if sd_d0_origConf_stable
+                upgradeTypes += "ORJINAL + "
+            upgradeTypes := upgradeTypes != "" ? str.substring(upgradeTypes, 0, str.length(upgradeTypes) - 3) : ""
+            
+            // Send UPGRADE
+            todayPct = sd_todayMovePct
+            liqM = sd_turnTL / 1000000.0
+            upgradeMsg = f_sd_buildUpgradeMsg(false, upgradeTypes, sd_entry, todayPct, liqM, sd_snap_momentumRepaint, curr_momentumRep, sd_snap_patlamaRepaint, curr_patlamaRep, sd_snap_secimRepaint, curr_secimRep, sd_snap_squeezeRepaint, curr_squeezeRep, sd_snap_nearBreakRepaint, curr_nearBreakRep, sd_bbWidthPct, sd_distToHighPct, sd_target, sd_stop)
+            send_msg(sd_chatId, upgradeMsg)
+            sd_upgradeRepaint_sent := true
