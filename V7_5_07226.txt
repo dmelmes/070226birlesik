@@ -1419,9 +1419,9 @@ pg_json_local  = pg_use_json_telegram
 pg_json = pg_json_local or pg_json_global
 
 var string pg_dayBuy  = ""
-var string pg_daySell = ""
+// var string pg_daySell = ""  // DISABLED to reduce tokens
 var int    pg_tBuy    = na
-var int    pg_tSell   = na
+// var int    pg_tSell   = na  // DISABLED to reduce tokens
 pg_cool_ms = pg_cooldown_minutes * 60 * 1000
 
 float pg_vol_sma     = na
@@ -1568,14 +1568,15 @@ if eff_pg_enable
     PG_CTX_EN := pg_ctx_en
 
     string hdrB_tr = "", hdrB_en = "", valueLine_tr = "", valueLine_en = "", body_tr = "", body_en = "", txtB = ""
-    string hdrS_tr = "", hdrS_en = "", body_tr_s = "", body_en_s = "", txtS = ""
+    // string hdrS_tr = "", hdrS_en = "", body_tr_s = "", body_en_s = "", txtS = ""  // DISABLED to reduce tokens
 
     canSendNow = true
     pg_buy_blocked_pct = pg_suppress_buy_if_daily_up and (dayChangePct >= pg_daily_up_pct_threshold)
     pg_currDay = str.format("{0}-{1}-{2}", year(time), month(time), dayofmonth(time))
 
     allowChartBuy  = f_pg_allow(pg_enable_alerts and pg_chart_also_send and pg_buy_sig  and not pg_buy_blocked_pct, pg_dayBuy,  pg_tBuy,  pg_daily_once, pg_cooldown_minutes, time, pg_currDay)
-    allowChartSell = f_pg_allow(pg_enable_alerts and pg_chart_also_send and pg_sell_sig,                               pg_daySell, pg_tSell, pg_daily_once, pg_cooldown_minutes, time, pg_currDay)
+    // allowChartSell = f_pg_allow(pg_enable_alerts and pg_chart_also_send and pg_sell_sig,                               pg_daySell, pg_tSell, pg_daily_once, pg_cooldown_minutes, time, pg_currDay)  // DISABLED to reduce tokens
+
 
     if canSendNow and allowChartBuy
         hdrB_tr := "💰 PG GİRİŞ — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
@@ -1591,15 +1592,16 @@ if eff_pg_enable
         pg_tBuy   := time
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("PG GİRİŞ","PG IN", f_tf_label(timeframe.period))
 
-    if canSendNow and allowChartSell
-        hdrS_tr := "💨 PG ÇIKIŞ — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
-        hdrS_en := "💨 PG OUT — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
-        valueLine_tr := pg_va_mode=="MA+Bollinger" ? "\nBB Konumu: " + pg_bb_pos : "\nDeğer: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
-        valueLine_en := pg_va_mode=="MA+Bollinger" ? "\nBB Position: " + pg_bb_pos : "\nValue: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
-        body_tr_s := "\nFiyat: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_tr
-        body_en_s := "\nPrice: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_en
-        txtS := (etiketDil=="TR" ? hdrS_tr + body_tr_s : hdrS_en + body_en_s)
-        send_event("PG_CHART_SELL_"+str.tostring(bar_index), txtS, f_pg_chat(false), alert.freq_once_per_bar_close)
+    // DISABLED: PG EXIT alerts to reduce token count (was 81,295 tokens, limit is 80,000)
+    // if canSendNow and allowChartSell
+    //     hdrS_tr := "💨 PG ÇIKIŞ — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
+    //     hdrS_en := "💨 PG OUT — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
+    //     valueLine_tr := pg_va_mode=="MA+Bollinger" ? "\nBB Konumu: " + pg_bb_pos : "\nDeğer: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+    //     valueLine_en := pg_va_mode=="MA+Bollinger" ? "\nBB Position: " + pg_bb_pos : "\nValue: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+    //     body_tr_s := "\nFiyat: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_tr
+    //     body_en_s := "\nPrice: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_en
+    //     txtS := (etiketDil=="TR" ? hdrS_tr + body_tr_s : hdrS_en + body_en_s)
+    //     send_event("PG_CHART_SELL_"+str.tostring(bar_index), txtS, f_pg_chat(false), alert.freq_once_per_bar_close)
 
 // ---
 // 10) HYBRID POTENTIAL
