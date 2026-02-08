@@ -1834,8 +1834,9 @@ sqz_short_signal = sqz_enable and (sqz_mode=="Signal") and sqzOff_ch and not sqz
 if sqz_enable and (sqz_mode=="Signal") and sqz_long_signal
     f_send_sqz_advanced(f_tf_label(timeframe.period), true, close, sqzVal_ch, adx_ch, ema_ch, telegramChatIdBuy)
 
-if sqz_enable and (sqz_mode=="Signal") and sqz_short_signal
-    f_send_sqz_advanced(f_tf_label(timeframe.period), false, close, sqzVal_ch, adx_ch, ema_ch, telegramChatIdSell)
+// SQZ short disabled to reduce tokens
+// if sqz_enable and (sqz_mode=="Signal") and sqz_short_signal
+//     f_send_sqz_advanced(f_tf_label(timeframe.period), false, close, sqzVal_ch, adx_ch, ema_ch, telegramChatIdSell)
 
 // MTF SQZ (4H, 1D) - Gelişmiş Context ile
 f_send_sqz_mtf(tf, tfLabel, useTf)=>
@@ -1849,8 +1850,8 @@ f_send_sqz_mtf(tf, tfLabel, useTf)=>
 
         if tfClosed and mtf_lSig
             f_send_sqz_advanced(tfLabel, true, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdBuy)
-        if tfClosed and mtf_sSig
-            f_send_sqz_advanced(tfLabel, false, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdSell)
+        // if tfClosed and mtf_sSig
+        //     f_send_sqz_advanced(tfLabel, false, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdSell)
 
 // 4H ve 1D için çağır
 f_send_sqz_mtf("240", "4H", true)
@@ -2846,7 +2847,7 @@ alertcondition(trailMoved, title="Trail Stop Yükseldi")
 
 // SQZ bağımsız sinyal alarmları (Signal modu)
 alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val > 0), title="SQZ Long Release")
-alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val < 0), title="SQZ Short Release")
+// alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val < 0), title="SQZ Short Release")
 
 // FO Forecast Oscillator BUY signal
 alertcondition(fo_finalSignal and fo_risk > 0, title="FO BUY Signal", message="Forecast Oscillator BUY signal fired")
