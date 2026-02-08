@@ -2356,6 +2356,25 @@ dt_cNeck            = input.color(color.orange, "DT Boyun Çizgi Rengi", group=g
 dt_confirmationCooldown = input.int(6, "DT Onay Sonrası Bekleme (bar)", minval=0, group=grpDT)
 dt_minRRtoShow          = input.float(1.2, "DT Gösterim için Min RR", step=0.1, group=grpDT)
 
+// ---
+// FO — Forecast Oscillator BUY-only Alert Module
+// ---
+grpFO = "FO — Forecast Oscillator"
+fo_enable            = input.bool(false, "FO Module Enable", group=grpFO)
+fo_chat_id           = input.string("", "FO Telegram chat_id (boş=DEFAULT)", group=grpFO)
+fo_lenFosc           = input.int(14, "FO Length (Forecast Oscillator)", minval=1, group=grpFO)
+fo_lenTrend          = input.int(50, "FO Trend Length (LinReg)", minval=1, group=grpFO)
+fo_lenRSI            = input.int(14, "FO RSI Length", minval=1, group=grpFO)
+fo_lenVol            = input.int(20, "FO Volume SMA Length", minval=1, group=grpFO)
+fo_lenATR            = input.int(14, "FO ATR Length", minval=1, group=grpFO)
+fo_slMult            = input.float(1.0, "FO Stop Loss ATR Multiplier", step=0.1, minval=0.1, group=grpFO)
+fo_rr1               = input.float(1.0, "FO Target1 R-Multiple", step=0.25, minval=0.1, group=grpFO)
+fo_rr2               = input.float(2.0, "FO Target2 R-Multiple", step=0.25, minval=0.1, group=grpFO)
+fo_cooldownBars      = input.int(10, "FO Cooldown Bars (min gap between signals)", minval=0, group=grpFO)
+fo_use_xu100         = input.bool(true, "FO Use XU100 Market Filter", group=grpFO)
+fo_xuLen             = input.int(50, "FO XU100 Trend Length", minval=1, group=grpFO)
+fo_confirm_on_close  = input.bool(true, "FO Confirm on Bar Close", group=grpFO)
+fo_round_to_mintick  = input.bool(true, "FO Round to mintick", group=grpFO)
 
 //----------------------------------------------------
 // Preset uygula (Auto) — sadece DT formasyon kısmı
@@ -2739,6 +2758,76 @@ if dt_mtf_send_1d
     f_dt_mtf_send("1D", true,  "Üçlü Dip",   dt_neckTB_1d, dt_confTB_1d)
     f_dt_mtf_send("1D", false, "Üçlü Tepe",  dt_neckTT_1d, dt_confTT_1d)
 
+//----------------------------------------------------
+// FO — Forecast Oscillator BUY Alert Implementation
+//----------------------------------------------------
+// Track last FO signal bar for cooldown
+var int fo_lastSignalBar = na
+
+// FO calculation (only if enabled)
+fo_src = close
+fo_lrc  = ta.linreg(fo_src, fo_lenFosc, 0)
+fo_lrc1 = ta.linreg(fo_src, fo_lenFosc, 1)
+fo_lrs  = fo_lrc - fo_lrc1
+fo_tsf  = ta.linreg(fo_src, fo_lenFosc, 0) + fo_lrs
+fo_fosc = 100 * (fo_src - fo_tsf[1]) / fo_src
+
+// Trend filters
+fo_trendUp = ta.linreg(fo_src, fo_lenTrend, 0) > ta.linreg(fo_src, fo_lenTrend, 1)
+fo_rsi = ta.rsi(fo_src, fo_lenRSI)
+fo_rsiOK = fo_rsi > 50 and fo_rsi > fo_rsi[1]
+fo_volSma = ta.sma(volume, fo_lenVol)
+fo_volOK = volume > fo_volSma
+
+// XU100 market filter (optional)
+fo_xu100 = request.security("BIST:XU100", timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+fo_xuTrendUp = ta.linreg(fo_xu100, fo_xuLen, 0) > ta.linreg(fo_xu100, fo_xuLen, 1)
+fo_xuOK = not fo_use_xu100 or fo_xuTrendUp
+
+// Entry trigger
+fo_crossover = ta.crossover(fo_fosc, 0)
+
+// Cooldown check
+fo_cooldownOK = na(fo_lastSignalBar) or (bar_index - fo_lastSignalBar) >= fo_cooldownBars
+
+// Combine all filters
+fo_signal = fo_enable and fo_crossover and fo_trendUp and fo_rsiOK and fo_volOK and fo_xuOK and fo_cooldownOK
+
+// Confirmation logic
+fo_finalSignal = fo_signal and (fo_confirm_on_close ? barstate.isconfirmed : true)
+
+// Risk/targets calculation
+fo_atr = ta.atr(fo_lenATR)
+fo_entry = close
+fo_stop = fo_entry - fo_atr * fo_slMult
+fo_risk = fo_entry - fo_stop
+fo_target1 = fo_entry + fo_rr1 * fo_risk
+fo_target2 = fo_entry + fo_rr2 * fo_risk
+
+// Format helper function
+fo_fmt(val) => fo_round_to_mintick ? fmtMint(val) : str.tostring(val, "#.####")
+
+// Send alert
+if fo_finalSignal and fo_risk > 0
+    // Update last signal bar
+    fo_lastSignalBar := bar_index
+    
+    // Format values
+    fo_entryStr = fo_fmt(fo_entry)
+    fo_stopStr = fo_fmt(fo_stop)
+    fo_t1Str = fo_fmt(fo_target1)
+    fo_t2Str = fo_fmt(fo_target2)
+    fo_tfStr = f_tf_label(timeframe.period)
+    
+    // Build message - short parseable format
+    fo_msg = "FO_AL|" + syminfo.ticker + "|TF=" + fo_tfStr + "|E=" + fo_entryStr + "|SL=" + fo_stopStr + "|T1=" + fo_t1Str + "|T2=" + fo_t2Str
+    
+    // Determine chat_id (use dedicated or fall back to default)
+    fo_chatId = fo_chat_id == "" ? telegramChatId : fo_chat_id
+    
+    // Send event
+    send_event("FO_BUY_" + str.tostring(bar_index), fo_msg, fo_chatId, alert.freq_once_per_bar_close)
+
 alertcondition(dt_confDB, title="DT Çift Dip Onaylandı", message="DT Çift Dip onaylı kırılım.")
 alertcondition(dt_confDT, title="DT Çift Tepe Onaylandı", message="DT Çift Tepe onaylı kırılım.")
 alertcondition(dt_confTB, title="DT Üçlü Dip Onaylandı", message="DT Üçlü Dip onaylı kırılım.")
@@ -2756,3 +2845,6 @@ alertcondition(trailMoved, title="Trail Stop Yükseldi")
 // SQZ bağımsız sinyal alarmları (Signal modu)
 alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val > 0), title="SQZ Long Release")
 alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val < 0), title="SQZ Short Release")
+
+// FO Forecast Oscillator BUY signal
+alertcondition(fo_finalSignal and fo_risk > 0, title="FO BUY Signal", message="Forecast Oscillator BUY signal fired")
