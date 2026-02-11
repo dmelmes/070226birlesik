@@ -2917,8 +2917,9 @@ if enableAlphaPerf and not safeBoot
     f_at_check_gate(arr, targetPct, minWins, lastN) =>
         _size = array.size(arr)
         // Require at least lastN samples before strict gating
+        // This provides a "warm-up" period to collect sufficient historical data
         if _size < lastN
-            false  // Not enough history, do not send
+            false  // Not enough history, do not send (module in learning mode)
         else
             _wins = 0
             for i = 0 to _size - 1
@@ -3001,7 +3002,7 @@ if enableAlphaPerf and not safeBoot
                 
                 // Send event with deterministic ID
                 _eventId = "ATCONF_BUY_4H_" + str.tostring(at4h_time)
-                send_event(_eventId, _fullMsg, _at_chatId, alert.freq_once_per_bar)
+                send_event(_eventId, _fullMsg, _at_chatId, alert.freq_once_per_bar_close)
             
             // Start new evaluation tracking
             at4h_evalEntry := at4h_entry
@@ -3036,7 +3037,7 @@ if enableAlphaPerf and not safeBoot
                 _prevOutcomes = f_at_outcomes_str(at1d_outcomes)
                 _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + 
                                 str.tostring(alpha_minWins) + "'si, " + 
-                                str.tostring(alpha_evalBars_1d) + " bar (~10 seans) içinde >= %" + 
+                                str.tostring(alpha_evalBars_1d) + " gün içinde >= %" + 
                                 str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
                 
                 _msgTitle = "🎯 BAŞARILI 1 GÜN AL (AlphaTrend CONFIRMED)"
@@ -3054,7 +3055,7 @@ if enableAlphaPerf and not safeBoot
                 
                 // Send event with deterministic ID
                 _eventId = "ATCONF_BUY_1D_" + str.tostring(at1d_time)
-                send_event(_eventId, _fullMsg, _at_chatId, alert.freq_once_per_bar)
+                send_event(_eventId, _fullMsg, _at_chatId, alert.freq_once_per_bar_close)
             
             // Start new evaluation tracking
             at1d_evalEntry := at1d_entry
