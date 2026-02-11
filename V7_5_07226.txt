@@ -2688,10 +2688,11 @@ if enableAlphaPerf and not safeBoot
 
 // =========================================================================
 
-alertcondition(dt_confDB, title="DT Çift Dip Onaylandı", message="DT Çift Dip onaylı kırılım.")
-alertcondition(dt_confDT, title="DT Çift Tepe Onaylandı", message="DT Çift Tepe onaylı kırılım.")
-alertcondition(dt_confTB, title="DT Üçlü Dip Onaylandı", message="DT Üçlü Dip onaylı kırılım.")
-alertcondition(dt_confTT, title="DT Üçlü Tepe Onaylandı", message="DT Üçlü Tepe onaylı kırılım.")
+// DT alertconditions disabled (DT module removed to save tokens)
+// alertcondition(dt_confDB, title="DT Çift Dip Onaylandı", message="DT Çift Dip onaylı kırılım.")
+// alertcondition(dt_confDT, title="DT Çift Tepe Onaylandı", message="DT Çift Tepe onaylı kırılım.")
+// alertcondition(dt_confTB, title="DT Üçlü Dip Onaylandı", message="DT Üçlü Dip onaylı kırılım.")
+// alertcondition(dt_confTT, title="DT Üçlü Tepe Onaylandı", message="DT Üçlü Tepe onaylı kırılım.")
 
 // alertcondition (Unified mantıkta kullanılan final booleanlar)
 alertcondition(allowBuy,   title="ST Flip AL (HTF filtreli/Grace)")
