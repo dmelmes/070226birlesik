@@ -2884,61 +2884,63 @@ f_alphatrend(coeff, AP, novolumedata) =>
     
     [_AlphaTrend, _confirmedBuy, _entryPrice, _signalTime]
 
+// -------------------------
+// Global state for AlphaTrend tracking (Pine v5 compatible)
+// -------------------------
+var float at4h_evalEntry = na
+var int at4h_evalStartBar = na
+var float at4h_evalMaxHigh = na
+var array<float> at4h_outcomes = array.new_float(0)
+
+var float at1d_evalEntry = na
+var int at1d_evalStartBar = na
+var float at1d_evalMaxHigh = na
+var array<float> at1d_outcomes = array.new_float(0)
+
+// -------------------------
+// Helper functions (global scope, Pine v5 compatible)
+// -------------------------
+
+// Add outcome to array, trim to lastN
+f_at_add_outcome(tfKey, pct, lastN) =>
+    if tfKey == "4H"
+        array.unshift(at4h_outcomes, pct)
+        while array.size(at4h_outcomes) > lastN
+            array.pop(at4h_outcomes)
+    else if tfKey == "1D"
+        array.unshift(at1d_outcomes, pct)
+        while array.size(at1d_outcomes) > lastN
+            array.pop(at1d_outcomes)
+
+// Check historical gate
+f_at_check_gate(tfKey, targetPct, minWins, lastN) =>
+    _arr = tfKey == "4H" ? at4h_outcomes : at1d_outcomes
+    _size = array.size(_arr)
+    _result = false
+    if _size < lastN
+        _result := false
+    else
+        _wins = 0
+        for i = 0 to _size - 1
+            if array.get(_arr, i) >= targetPct
+                _wins += 1
+        _result := _wins >= minWins
+    _result
+
+// Format previous outcomes for message
+f_at_outcomes_str(tfKey) =>
+    _arr = tfKey == "4H" ? at4h_outcomes : at1d_outcomes
+    _str = ""
+    _size = array.size(_arr)
+    if _size > 0
+        for i = 0 to _size - 1
+            if i > 0
+                _str += ", "
+            _str += "+" + str.tostring(array.get(_arr, i), "#.#") + "%"
+    _str
+
 // Skip module if safeBoot or not enabled
 if enableAlphaPerf and not safeBoot
-    
-    // -------------------------
-    // State for 4H tracking
-    // -------------------------
-    var float at4h_evalEntry = na
-    var int at4h_evalStartBar = na
-    var float at4h_evalMaxHigh = na
-    var array<float> at4h_outcomes = array.new_float(0)
-    
-    // -------------------------
-    // State for 1D tracking
-    // -------------------------
-    var float at1d_evalEntry = na
-    var int at1d_evalStartBar = na
-    var float at1d_evalMaxHigh = na
-    var array<float> at1d_outcomes = array.new_float(0)
-    
-    // -------------------------
-    // Helper: Add outcome to array, trim to lastN
-    // -------------------------
-    f_at_add_outcome(arr, pct, lastN) =>
-        array.unshift(arr, pct)  // Add to beginning (most recent first)
-        while array.size(arr) > lastN
-            array.pop(arr)  // Remove oldest
-    
-    // -------------------------
-    // Helper: Check historical gate
-    // -------------------------
-    f_at_check_gate(arr, targetPct, minWins, lastN) =>
-        _size = array.size(arr)
-        // Require at least lastN samples before strict gating
-        // This provides a "warm-up" period to collect sufficient historical data
-        if _size < lastN
-            false  // Not enough history, do not send (module in learning mode)
-        else
-            _wins = 0
-            for i = 0 to _size - 1
-                if array.get(arr, i) >= targetPct
-                    _wins += 1
-            _wins >= minWins
-    
-    // -------------------------
-    // Helper: Format previous outcomes for message
-    // -------------------------
-    f_at_outcomes_str(arr) =>
-        _str = ""
-        _size = array.size(arr)
-        if _size > 0
-            for i = 0 to _size - 1
-                if i > 0
-                    _str += ", "
-                _str += "+" + str.tostring(array.get(arr, i), "#.#") + "%"
-        _str
     
     // -------------------------
     // MTF retrieval for 4H
@@ -2968,7 +2970,7 @@ if enableAlphaPerf and not safeBoot
             // Check if evaluation window complete
             if _barsElapsed >= alpha_evalBars_4h
                 _runUpPct = (at4h_evalMaxHigh / at4h_evalEntry - 1) * 100.0
-                f_at_add_outcome(at4h_outcomes, _runUpPct, alpha_lastN)
+                f_at_add_outcome("4H", _runUpPct, alpha_lastN)
                 // Close evaluation
                 at4h_evalEntry := na
                 at4h_evalStartBar := na
@@ -2977,24 +2979,16 @@ if enableAlphaPerf and not safeBoot
         // New confirmed BUY signal
         if at4h_confBuy and not na(at4h_entry)
             // Check historical gate
-            _gatePass = f_at_check_gate(at4h_outcomes, alpha_targetPct, alpha_minWins, alpha_lastN)
+            _gatePass = f_at_check_gate("4H", alpha_targetPct, alpha_minWins, alpha_lastN)
             
             if _gatePass
-                // Build alert message
-                _prevOutcomes = f_at_outcomes_str(at4h_outcomes)
-                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + 
-                                str.tostring(alpha_minWins) + "'si, " + 
-                                str.tostring(alpha_evalBars_4h) + " bar (~10 seans) içinde >= %" + 
-                                str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
-                
+                // Build alert message (single-line concatenation for Pine v5)
+                _prevOutcomes = f_at_outcomes_str("4H")
+                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + str.tostring(alpha_minWins) + "'si, " + str.tostring(alpha_evalBars_4h) + " bar (~10 seans) içinde >= %" + str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
                 _msgTitle = "🎯 BAŞARILI 4 SAAT AL (AlphaTrend CONFIRMED)"
-                _msgBody = "[" + syminfo.ticker + "] 4H\n" +
-                           "Fiyat: " + fmtMint(at4h_entry) + "\n" +
-                           _criterionMsg
-                
+                _msgBody = "[" + syminfo.ticker + "] 4H\nFiyat: " + fmtMint(at4h_entry) + "\n" + _criterionMsg
                 if _prevOutcomes != ""
-                    _msgBody += "\nÖnceki AL sonuçları: " + _prevOutcomes
-                
+                    _msgBody := _msgBody + "\nÖnceki AL sonuçları: " + _prevOutcomes
                 _fullMsg = _msgTitle + "\n" + _msgBody
                 
                 // Determine chat_id
@@ -3021,7 +3015,7 @@ if enableAlphaPerf and not safeBoot
             // Check if evaluation window complete
             if _barsElapsed >= alpha_evalBars_1d
                 _runUpPct = (at1d_evalMaxHigh / at1d_evalEntry - 1) * 100.0
-                f_at_add_outcome(at1d_outcomes, _runUpPct, alpha_lastN)
+                f_at_add_outcome("1D", _runUpPct, alpha_lastN)
                 // Close evaluation
                 at1d_evalEntry := na
                 at1d_evalStartBar := na
@@ -3030,24 +3024,16 @@ if enableAlphaPerf and not safeBoot
         // New confirmed BUY signal
         if at1d_confBuy and not na(at1d_entry)
             // Check historical gate
-            _gatePass = f_at_check_gate(at1d_outcomes, alpha_targetPct, alpha_minWins, alpha_lastN)
+            _gatePass = f_at_check_gate("1D", alpha_targetPct, alpha_minWins, alpha_lastN)
             
             if _gatePass
-                // Build alert message
-                _prevOutcomes = f_at_outcomes_str(at1d_outcomes)
-                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + 
-                                str.tostring(alpha_minWins) + "'si, " + 
-                                str.tostring(alpha_evalBars_1d) + " gün içinde >= %" + 
-                                str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
-                
+                // Build alert message (single-line concatenation for Pine v5)
+                _prevOutcomes = f_at_outcomes_str("1D")
+                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + str.tostring(alpha_minWins) + "'si, " + str.tostring(alpha_evalBars_1d) + " gün içinde >= %" + str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
                 _msgTitle = "🎯 BAŞARILI 1 GÜN AL (AlphaTrend CONFIRMED)"
-                _msgBody = "[" + syminfo.ticker + "] 1D\n" +
-                           "Fiyat: " + fmtMint(at1d_entry) + "\n" +
-                           _criterionMsg
-                
+                _msgBody = "[" + syminfo.ticker + "] 1D\nFiyat: " + fmtMint(at1d_entry) + "\n" + _criterionMsg
                 if _prevOutcomes != ""
-                    _msgBody += "\nÖnceki AL sonuçları: " + _prevOutcomes
-                
+                    _msgBody := _msgBody + "\nÖnceki AL sonuçları: " + _prevOutcomes
                 _fullMsg = _msgTitle + "\n" + _msgBody
                 
                 // Determine chat_id
