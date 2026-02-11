@@ -291,8 +291,8 @@ pg_hc_limit_down_len    = input.int(5,      "HC: Taban-kilit pencere (bar)", min
 // MTF Alerts (1H/2H/4H/1D)
 grpMTF = "MTF Alerts (1H/2H/4H/1D)"
 mtf_enable      = input.bool(true,  "MTF Alert Paketi Aktif", group=grpMTF)
-mtf_use_1h      = input.bool(true,  "1H (60)", group=grpMTF)
-mtf_use_2h      = input.bool(true,  "2H (120)", group=grpMTF)
+mtf_use_1h      = input.bool(false,  "1H (60)", group=grpMTF)
+mtf_use_2h      = input.bool(false,  "2H (120)", group=grpMTF)
 mtf_use_4h      = input.bool(true,  "4H (240)", group=grpMTF)
 mtf_use_1d      = input.bool(true,  "1D (D)", group=grpMTF)
 mtf_send_if_any = input.bool(true,  "Kapanan TF’te sinyal varsa gönder", group=grpMTF)
@@ -306,7 +306,7 @@ showDebugFlags       = input.bool(false, "Debug Event ID Label", group=grpRef)
 
 // Early (intra-bar) — BANKO
 grpEarly = "Early Alerts"
-earlyBankoEnabled        = input.bool(true,  "ERKEN BANKO (intra-bar) aktif", group=grpEarly)
+earlyBankoEnabled        = input.bool(false,  "ERKEN BANKO (intra-bar) aktif", group=grpEarly)
 earlyBankoMinProgressPct = input.float(25.0, "ERKEN BANKO: min bar ilerleme (%)", step=5.0, minval=0.0, maxval=100.0, group=grpEarly)
 earlyBankoCooldownMin    = input.int(15,     "ERKEN BANKO: cooldown (dakika)", minval=0, group=grpEarly)
 
@@ -1853,7 +1853,8 @@ f_send_sqz_mtf(tf, tfLabel, useTf)=>
         // if tfClosed and mtf_sSig
         //     f_send_sqz_advanced(tfLabel, false, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdSell)
 
-// 4H ve 1D için çağır
+// 4H ve 1D için çağır (1H disabled to save tokens)
+// f_send_sqz_mtf("60",  "1H", true)
 f_send_sqz_mtf("240", "4H", true)
 f_send_sqz_mtf("D",   "1D", true)
 
@@ -2102,10 +2103,11 @@ sendMtf(tf, tfLabel, useTf)=>
                     msg = (etiketDil=="TR"?"🚀 MTF AL [" : "🚀 MTF BUY [") + syminfo.ticker + "] " + tfLabel + ": " + evStrBuy + "\nFiyat: " + fmtMint(mtfClose) + prevNoteMtf
                     send_event(id, msg, telegramChatIdBuy, alert.freq_once_per_bar_close)
                     [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("MTF AL", "MTF BUY", tfLabel)
-                if sellLike and evStrSell!=""
-                    id2 = "MTF_ST_"+tfLabel+"_SELL_"+str.tostring(mtfTime)
-                    msg2 = (etiketDil=="TR"?"🔻 MTF SAT [" : "🔻 MTF SELL [") + syminfo.ticker + "] " + tfLabel + ": " + evStrSell + "\nFiyat: " + fmtMint(mtfClose)
-                    send_event(id2, msg2, telegramChatIdSell, alert.freq_once_per_bar_close)
+                // MTF SAT disabled to reduce tokens
+                // if sellLike and evStrSell!=""
+                //     id2 = "MTF_ST_"+tfLabel+"_SELL_"+str.tostring(mtfTime)
+                //     msg2 = (etiketDil=="TR"?"🔻 MTF SAT [" : "🔻 MTF SELL [") + syminfo.ticker + "] " + tfLabel + ": " + evStrSell + "\nFiyat: " + fmtMint(mtfClose)
+                //     send_event(id2, msg2, telegramChatIdSell, alert.freq_once_per_bar_close)
             // Note: BANKO SAT (k_) intentionally not sent in BANKO mode per user request
 
 sendMtf("60","1H", mtf_use_1h)
