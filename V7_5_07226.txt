@@ -2379,6 +2379,22 @@ fo_xuLen             = input.int(50, "FO XU100 Trend Length", minval=1, group=gr
 fo_confirm_on_close  = input.bool(true, "FO Confirm on Bar Close", group=grpFO)
 fo_round_to_mintick  = input.bool(true, "FO Round to mintick", group=grpFO)
 
+// ---
+// AT — AlphaTrend Confirmed BUY Module with Historical Performance Gate
+// ---
+grpAT = "AT — AlphaTrend Confirmed BUY"
+enableAlphaPerf      = input.bool(false, "AT Module Enable", group=grpAT)
+alphaChatId          = input.string("", "AT Telegram chat_id (boş=DEFAULT)", group=grpAT)
+alpha_coeff          = input.float(1.0, "AT Multiplier", step=0.1, minval=0.1, group=grpAT)
+alpha_AP             = input.int(14, "AT Common Period", minval=1, group=grpAT)
+alpha_evalBars_4h    = input.int(60, "AT 4H Eval Bars (~10 days)", minval=1, group=grpAT)
+alpha_evalBars_1d    = input.int(10, "AT 1D Eval Bars", minval=1, group=grpAT)
+alpha_targetPct      = input.float(20.0, "AT Target % (max run-up)", step=0.5, minval=0.1, group=grpAT)
+alpha_lastN          = input.int(3, "AT Last N signals to track", minval=1, maxval=10, group=grpAT)
+alpha_minWins        = input.int(2, "AT Min Wins required", minval=1, maxval=10, group=grpAT)
+alpha_sendOn         = input.string("Both", "AT Send alerts on TF", options=["4H","1D","Both"], group=grpAT)
+alpha_novolumedata   = input.bool(false, "AT No Volume Data (use RSI)", group=grpAT)
+
 //----------------------------------------------------
 // Preset uygula (Auto) — sadece DT formasyon kısmı
 //----------------------------------------------------
@@ -2830,6 +2846,222 @@ if fo_finalSignal and fo_risk > 0
     
     // Send event
     send_event("FO_BUY_" + str.tostring(bar_index), fo_msg, fo_chatId, alert.freq_once_per_bar_close)
+
+// =========================================================================
+// AT — AlphaTrend Confirmed BUY Module with Historical Performance Gate
+// =========================================================================
+
+// AlphaTrend calculation function
+// Returns: [AlphaTrend, confirmedBuy, entryPrice, signalTime]
+f_alphatrend(coeff, AP, novolumedata) =>
+    _ATR = ta.sma(ta.tr, AP)
+    _upT = low - _ATR * coeff
+    _downT = high + _ATR * coeff
+    
+    var float _AlphaTrend = na
+    _condition = novolumedata ? ta.rsi(close, AP) >= 50 : ta.mfi(hlc3, AP) >= 50
+    _AlphaTrend := _condition ? 
+                   (_upT < nz(_AlphaTrend[1]) ? nz(_AlphaTrend[1]) : _upT) : 
+                   (_downT > nz(_AlphaTrend[1]) ? nz(_AlphaTrend[1]) : _downT)
+    
+    // Buy/Sell signals
+    _buySignalk = ta.crossover(_AlphaTrend, _AlphaTrend[2])
+    _sellSignalk = ta.crossunder(_AlphaTrend, _AlphaTrend[2])
+    
+    // Bars since signals
+    _K1 = ta.barssince(_buySignalk)
+    _K2 = ta.barssince(_sellSignalk)
+    _O1 = ta.barssince(_buySignalk[1])
+    _O2 = ta.barssince(_sellSignalk[1])
+    
+    // Confirmed BUY: buySignalk[1] and O1[1] > K2 (signal approved on next bar)
+    // Use barstate.isconfirmed to ensure we're working with closed bars
+    _confirmedBuy = barstate.isconfirmed and _buySignalk[1] and _O1[1] > _K2
+    
+    // Entry price is close of the confirmation bar (current bar when confirmed)
+    _entryPrice = _confirmedBuy ? close : na
+    _signalTime = _confirmedBuy ? time : na
+    
+    [_AlphaTrend, _confirmedBuy, _entryPrice, _signalTime]
+
+// Skip module if safeBoot or not enabled
+if enableAlphaPerf and not safeBoot
+    
+    // -------------------------
+    // State for 4H tracking
+    // -------------------------
+    var float at4h_evalEntry = na
+    var int at4h_evalStartBar = na
+    var float at4h_evalMaxHigh = na
+    var array<float> at4h_outcomes = array.new_float(0)
+    
+    // -------------------------
+    // State for 1D tracking
+    // -------------------------
+    var float at1d_evalEntry = na
+    var int at1d_evalStartBar = na
+    var float at1d_evalMaxHigh = na
+    var array<float> at1d_outcomes = array.new_float(0)
+    
+    // -------------------------
+    // Helper: Add outcome to array, trim to lastN
+    // -------------------------
+    f_at_add_outcome(arr, pct, lastN) =>
+        array.unshift(arr, pct)  // Add to beginning (most recent first)
+        while array.size(arr) > lastN
+            array.pop(arr)  // Remove oldest
+    
+    // -------------------------
+    // Helper: Check historical gate
+    // -------------------------
+    f_at_check_gate(arr, targetPct, minWins, lastN) =>
+        _size = array.size(arr)
+        // Require at least lastN samples before strict gating
+        if _size < lastN
+            false  // Not enough history, do not send
+        else
+            _wins = 0
+            for i = 0 to _size - 1
+                if array.get(arr, i) >= targetPct
+                    _wins += 1
+            _wins >= minWins
+    
+    // -------------------------
+    // Helper: Format previous outcomes for message
+    // -------------------------
+    f_at_outcomes_str(arr) =>
+        _str = ""
+        _size = array.size(arr)
+        if _size > 0
+            for i = 0 to _size - 1
+                if i > 0
+                    _str += ", "
+                _str += "+" + str.tostring(array.get(arr, i), "#.#") + "%"
+        _str
+    
+    // -------------------------
+    // MTF retrieval for 4H
+    // -------------------------
+    [at4h_AT, at4h_confBuy, at4h_entry, at4h_time] = 
+        request.security(syminfo.tickerid, "240", 
+                         f_alphatrend(alpha_coeff, alpha_AP, alpha_novolumedata), 
+                         barmerge.gaps_off, barmerge.lookahead_off)
+    
+    // -------------------------
+    // MTF retrieval for 1D
+    // -------------------------
+    [at1d_AT, at1d_confBuy, at1d_entry, at1d_time] = 
+        request.security(syminfo.tickerid, "D", 
+                         f_alphatrend(alpha_coeff, alpha_AP, alpha_novolumedata), 
+                         barmerge.gaps_off, barmerge.lookahead_off)
+    
+    // -------------------------
+    // 4H Processing
+    // -------------------------
+    if alpha_sendOn == "4H" or alpha_sendOn == "Both"
+        // Update ongoing evaluation if active
+        if not na(at4h_evalEntry)
+            at4h_evalMaxHigh := math.max(nz(at4h_evalMaxHigh, high), high)
+            _barsElapsed = bar_index - at4h_evalStartBar
+            
+            // Check if evaluation window complete
+            if _barsElapsed >= alpha_evalBars_4h
+                _runUpPct = (at4h_evalMaxHigh / at4h_evalEntry - 1) * 100.0
+                f_at_add_outcome(at4h_outcomes, _runUpPct, alpha_lastN)
+                // Close evaluation
+                at4h_evalEntry := na
+                at4h_evalStartBar := na
+                at4h_evalMaxHigh := na
+        
+        // New confirmed BUY signal
+        if at4h_confBuy and not na(at4h_entry)
+            // Check historical gate
+            _gatePass = f_at_check_gate(at4h_outcomes, alpha_targetPct, alpha_minWins, alpha_lastN)
+            
+            if _gatePass
+                // Build alert message
+                _prevOutcomes = f_at_outcomes_str(at4h_outcomes)
+                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + 
+                                str.tostring(alpha_minWins) + "'si, " + 
+                                str.tostring(alpha_evalBars_4h) + " bar (~10 seans) içinde >= %" + 
+                                str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
+                
+                _msgTitle = "🎯 BAŞARILI 4 SAAT AL (AlphaTrend CONFIRMED)"
+                _msgBody = "[" + syminfo.ticker + "] 4H\n" +
+                           "Fiyat: " + fmtMint(at4h_entry) + "\n" +
+                           _criterionMsg
+                
+                if _prevOutcomes != ""
+                    _msgBody += "\nÖnceki AL sonuçları: " + _prevOutcomes
+                
+                _fullMsg = _msgTitle + "\n" + _msgBody
+                
+                // Determine chat_id
+                _at_chatId = alphaChatId == "" ? telegramChatId : alphaChatId
+                
+                // Send event with deterministic ID
+                _eventId = "ATCONF_BUY_4H_" + str.tostring(at4h_time)
+                send_event(_eventId, _fullMsg, _at_chatId, alert.freq_once_per_bar)
+            
+            // Start new evaluation tracking
+            at4h_evalEntry := at4h_entry
+            at4h_evalStartBar := bar_index
+            at4h_evalMaxHigh := high
+    
+    // -------------------------
+    // 1D Processing
+    // -------------------------
+    if alpha_sendOn == "1D" or alpha_sendOn == "Both"
+        // Update ongoing evaluation if active
+        if not na(at1d_evalEntry)
+            at1d_evalMaxHigh := math.max(nz(at1d_evalMaxHigh, high), high)
+            _barsElapsed = bar_index - at1d_evalStartBar
+            
+            // Check if evaluation window complete
+            if _barsElapsed >= alpha_evalBars_1d
+                _runUpPct = (at1d_evalMaxHigh / at1d_evalEntry - 1) * 100.0
+                f_at_add_outcome(at1d_outcomes, _runUpPct, alpha_lastN)
+                // Close evaluation
+                at1d_evalEntry := na
+                at1d_evalStartBar := na
+                at1d_evalMaxHigh := na
+        
+        // New confirmed BUY signal
+        if at1d_confBuy and not na(at1d_entry)
+            // Check historical gate
+            _gatePass = f_at_check_gate(at1d_outcomes, alpha_targetPct, alpha_minWins, alpha_lastN)
+            
+            if _gatePass
+                // Build alert message
+                _prevOutcomes = f_at_outcomes_str(at1d_outcomes)
+                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + 
+                                str.tostring(alpha_minWins) + "'si, " + 
+                                str.tostring(alpha_evalBars_1d) + " bar (~10 seans) içinde >= %" + 
+                                str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
+                
+                _msgTitle = "🎯 BAŞARILI 1 GÜN AL (AlphaTrend CONFIRMED)"
+                _msgBody = "[" + syminfo.ticker + "] 1D\n" +
+                           "Fiyat: " + fmtMint(at1d_entry) + "\n" +
+                           _criterionMsg
+                
+                if _prevOutcomes != ""
+                    _msgBody += "\nÖnceki AL sonuçları: " + _prevOutcomes
+                
+                _fullMsg = _msgTitle + "\n" + _msgBody
+                
+                // Determine chat_id
+                _at_chatId = alphaChatId == "" ? telegramChatId : alphaChatId
+                
+                // Send event with deterministic ID
+                _eventId = "ATCONF_BUY_1D_" + str.tostring(at1d_time)
+                send_event(_eventId, _fullMsg, _at_chatId, alert.freq_once_per_bar)
+            
+            // Start new evaluation tracking
+            at1d_evalEntry := at1d_entry
+            at1d_evalStartBar := bar_index
+            at1d_evalMaxHigh := high
+
+// =========================================================================
 
 alertcondition(dt_confDB, title="DT Çift Dip Onaylandı", message="DT Çift Dip onaylı kırılım.")
 alertcondition(dt_confDT, title="DT Çift Tepe Onaylandı", message="DT Çift Tepe onaylı kırılım.")
