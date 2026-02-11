@@ -1,5 +1,5 @@
 //@version=5
-indicator(title="V7-5", shorttitle="V7-5",  overlay=true,  max_labels_count=500, max_lines_count=500, max_boxes_count=200,
+indicator(title="V7-6", shorttitle="V7-6",  overlay=true,  max_labels_count=500, max_lines_count=500, max_boxes_count=200,
      dynamic_requests=true)
 
 
@@ -1419,9 +1419,9 @@ pg_json_local  = pg_use_json_telegram
 pg_json = pg_json_local or pg_json_global
 
 var string pg_dayBuy  = ""
-var string pg_daySell = ""
+// var string pg_daySell = ""
 var int    pg_tBuy    = na
-var int    pg_tSell   = na
+// var int    pg_tSell   = na
 pg_cool_ms = pg_cooldown_minutes * 60 * 1000
 
 float pg_vol_sma     = na
@@ -1568,14 +1568,15 @@ if eff_pg_enable
     PG_CTX_EN := pg_ctx_en
 
     string hdrB_tr = "", hdrB_en = "", valueLine_tr = "", valueLine_en = "", body_tr = "", body_en = "", txtB = ""
-    string hdrS_tr = "", hdrS_en = "", body_tr_s = "", body_en_s = "", txtS = ""
+    // string hdrS_tr = "", hdrS_en = "", body_tr_s = "", body_en_s = "", txtS = ""
 
     canSendNow = true
     pg_buy_blocked_pct = pg_suppress_buy_if_daily_up and (dayChangePct >= pg_daily_up_pct_threshold)
     pg_currDay = str.format("{0}-{1}-{2}", year(time), month(time), dayofmonth(time))
 
     allowChartBuy  = f_pg_allow(pg_enable_alerts and pg_chart_also_send and pg_buy_sig  and not pg_buy_blocked_pct, pg_dayBuy,  pg_tBuy,  pg_daily_once, pg_cooldown_minutes, time, pg_currDay)
-    allowChartSell = f_pg_allow(pg_enable_alerts and pg_chart_also_send and pg_sell_sig,                               pg_daySell, pg_tSell, pg_daily_once, pg_cooldown_minutes, time, pg_currDay)
+    // allowChartSell = f_pg_allow(pg_enable_alerts and pg_chart_also_send and pg_sell_sig, pg_daySell, pg_tSell, pg_daily_once, pg_cooldown_minutes, time, pg_currDay)
+
 
     if canSendNow and allowChartBuy
         hdrB_tr := "💰 PG GİRİŞ — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
@@ -1591,15 +1592,16 @@ if eff_pg_enable
         pg_tBuy   := time
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("PG GİRİŞ","PG IN", f_tf_label(timeframe.period))
 
-    if canSendNow and allowChartSell
-        hdrS_tr := "💨 PG ÇIKIŞ — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
-        hdrS_en := "💨 PG OUT — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
-        valueLine_tr := pg_va_mode=="MA+Bollinger" ? "\nBB Konumu: " + pg_bb_pos : "\nDeğer: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
-        valueLine_en := pg_va_mode=="MA+Bollinger" ? "\nBB Position: " + pg_bb_pos : "\nValue: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
-        body_tr_s := "\nFiyat: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_tr
-        body_en_s := "\nPrice: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_en
-        txtS := (etiketDil=="TR" ? hdrS_tr + body_tr_s : hdrS_en + body_en_s)
-        send_event("PG_CHART_SELL_"+str.tostring(bar_index), txtS, f_pg_chat(false), alert.freq_once_per_bar_close)
+    // PG EXIT disabled
+    // if canSendNow and allowChartSell
+    //     hdrS_tr := "💨 PG ÇIKIŞ — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
+    //     hdrS_en := "💨 PG OUT — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
+    //     valueLine_tr := pg_va_mode=="MA+Bollinger" ? "\nBB Konumu: " + pg_bb_pos : "\nDeğer: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+    //     valueLine_en := pg_va_mode=="MA+Bollinger" ? "\nBB Position: " + pg_bb_pos : "\nValue: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+    //     body_tr_s := "\nFiyat: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_tr
+    //     body_en_s := "\nPrice: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_en
+    //     txtS := (etiketDil=="TR" ? hdrS_tr + body_tr_s : hdrS_en + body_en_s)
+    //     send_event("PG_CHART_SELL_"+str.tostring(bar_index), txtS, f_pg_chat(false), alert.freq_once_per_bar_close)
 
 // ---
 // 10) HYBRID POTENTIAL
@@ -1832,8 +1834,9 @@ sqz_short_signal = sqz_enable and (sqz_mode=="Signal") and sqzOff_ch and not sqz
 if sqz_enable and (sqz_mode=="Signal") and sqz_long_signal
     f_send_sqz_advanced(f_tf_label(timeframe.period), true, close, sqzVal_ch, adx_ch, ema_ch, telegramChatIdBuy)
 
-if sqz_enable and (sqz_mode=="Signal") and sqz_short_signal
-    f_send_sqz_advanced(f_tf_label(timeframe.period), false, close, sqzVal_ch, adx_ch, ema_ch, telegramChatIdSell)
+// SQZ short disabled to reduce tokens
+// if sqz_enable and (sqz_mode=="Signal") and sqz_short_signal
+//     f_send_sqz_advanced(f_tf_label(timeframe.period), false, close, sqzVal_ch, adx_ch, ema_ch, telegramChatIdSell)
 
 // MTF SQZ (4H, 1D) - Gelişmiş Context ile
 f_send_sqz_mtf(tf, tfLabel, useTf)=>
@@ -1847,8 +1850,8 @@ f_send_sqz_mtf(tf, tfLabel, useTf)=>
 
         if tfClosed and mtf_lSig
             f_send_sqz_advanced(tfLabel, true, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdBuy)
-        if tfClosed and mtf_sSig
-            f_send_sqz_advanced(tfLabel, false, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdSell)
+        // if tfClosed and mtf_sSig
+        //     f_send_sqz_advanced(tfLabel, false, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdSell)
 
 // 4H ve 1D için çağır
 f_send_sqz_mtf("240", "4H", true)
@@ -2356,6 +2359,25 @@ dt_cNeck            = input.color(color.orange, "DT Boyun Çizgi Rengi", group=g
 dt_confirmationCooldown = input.int(6, "DT Onay Sonrası Bekleme (bar)", minval=0, group=grpDT)
 dt_minRRtoShow          = input.float(1.2, "DT Gösterim için Min RR", step=0.1, group=grpDT)
 
+// ---
+// FO — Forecast Oscillator BUY-only Alert Module
+// ---
+grpFO = "FO — Forecast Oscillator"
+fo_enable            = input.bool(false, "FO Module Enable", group=grpFO)
+fo_chat_id           = input.string("", "FO Telegram chat_id (boş=DEFAULT)", group=grpFO)
+fo_lenFosc           = input.int(14, "FO Length (Forecast Oscillator)", minval=1, group=grpFO)
+fo_lenTrend          = input.int(50, "FO Trend Length (LinReg)", minval=1, group=grpFO)
+fo_lenRSI            = input.int(14, "FO RSI Length", minval=1, group=grpFO)
+fo_lenVol            = input.int(20, "FO Volume SMA Length", minval=1, group=grpFO)
+fo_lenATR            = input.int(14, "FO ATR Length", minval=1, group=grpFO)
+fo_slMult            = input.float(1.0, "FO Stop Loss ATR Multiplier", step=0.1, minval=0.1, group=grpFO)
+fo_rr1               = input.float(1.0, "FO Target1 R-Multiple", step=0.25, minval=0.1, group=grpFO)
+fo_rr2               = input.float(2.0, "FO Target2 R-Multiple", step=0.25, minval=0.1, group=grpFO)
+fo_cooldownBars      = input.int(10, "FO Cooldown Bars (min gap between signals)", minval=0, group=grpFO)
+fo_use_xu100         = input.bool(true, "FO Use XU100 Market Filter", group=grpFO)
+fo_xuLen             = input.int(50, "FO XU100 Trend Length", minval=1, group=grpFO)
+fo_confirm_on_close  = input.bool(true, "FO Confirm on Bar Close", group=grpFO)
+fo_round_to_mintick  = input.bool(true, "FO Round to mintick", group=grpFO)
 
 //----------------------------------------------------
 // Preset uygula (Auto) — sadece DT formasyon kısmı
@@ -2739,6 +2761,76 @@ if dt_mtf_send_1d
     f_dt_mtf_send("1D", true,  "Üçlü Dip",   dt_neckTB_1d, dt_confTB_1d)
     f_dt_mtf_send("1D", false, "Üçlü Tepe",  dt_neckTT_1d, dt_confTT_1d)
 
+//----------------------------------------------------
+// FO — Forecast Oscillator BUY Alert Implementation
+//----------------------------------------------------
+// Track last FO signal bar for cooldown
+var int fo_lastSignalBar = na
+
+// FO calculation (only if enabled)
+fo_src = close
+fo_lrc  = ta.linreg(fo_src, fo_lenFosc, 0)
+fo_lrc1 = ta.linreg(fo_src, fo_lenFosc, 1)
+fo_lrs  = fo_lrc - fo_lrc1
+fo_tsf  = ta.linreg(fo_src, fo_lenFosc, 0) + fo_lrs
+fo_fosc = 100 * (fo_src - fo_tsf[1]) / fo_src
+
+// Trend filters
+fo_trendUp = ta.linreg(fo_src, fo_lenTrend, 0) > ta.linreg(fo_src, fo_lenTrend, 1)
+fo_rsi = ta.rsi(fo_src, fo_lenRSI)
+fo_rsiOK = fo_rsi > 50 and fo_rsi > fo_rsi[1]
+fo_volSma = ta.sma(volume, fo_lenVol)
+fo_volOK = volume > fo_volSma
+
+// XU100 market filter (optional)
+fo_xu100 = request.security("BIST:XU100", timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+fo_xuTrendUp = ta.linreg(fo_xu100, fo_xuLen, 0) > ta.linreg(fo_xu100, fo_xuLen, 1)
+fo_xuOK = not fo_use_xu100 or fo_xuTrendUp
+
+// Entry trigger
+fo_crossover = ta.crossover(fo_fosc, 0)
+
+// Cooldown check
+fo_cooldownOK = na(fo_lastSignalBar) or (bar_index - fo_lastSignalBar) >= fo_cooldownBars
+
+// Combine all filters
+fo_signal = fo_enable and fo_crossover and fo_trendUp and fo_rsiOK and fo_volOK and fo_xuOK and fo_cooldownOK
+
+// Confirmation logic
+fo_finalSignal = fo_signal and (fo_confirm_on_close ? barstate.isconfirmed : true)
+
+// Risk/targets calculation
+fo_atr = ta.atr(fo_lenATR)
+fo_entry = close
+fo_stop = fo_entry - fo_atr * fo_slMult
+fo_risk = fo_entry - fo_stop
+fo_target1 = fo_entry + fo_rr1 * fo_risk
+fo_target2 = fo_entry + fo_rr2 * fo_risk
+
+// Format helper function
+fo_fmt(val) => fo_round_to_mintick ? fmtMint(val) : str.tostring(val, "#.####")
+
+// Send alert
+if fo_finalSignal and fo_risk > 0
+    // Update last signal bar
+    fo_lastSignalBar := bar_index
+    
+    // Format values
+    fo_entryStr = fo_fmt(fo_entry)
+    fo_stopStr = fo_fmt(fo_stop)
+    fo_t1Str = fo_fmt(fo_target1)
+    fo_t2Str = fo_fmt(fo_target2)
+    fo_tfStr = f_tf_label(timeframe.period)
+    
+    // Build message - short parseable format
+    fo_msg = "FO_AL|" + syminfo.ticker + "|TF=" + fo_tfStr + "|E=" + fo_entryStr + "|SL=" + fo_stopStr + "|T1=" + fo_t1Str + "|T2=" + fo_t2Str
+    
+    // Determine chat_id (use dedicated or fall back to default)
+    fo_chatId = fo_chat_id == "" ? telegramChatId : fo_chat_id
+    
+    // Send event
+    send_event("FO_BUY_" + str.tostring(bar_index), fo_msg, fo_chatId, alert.freq_once_per_bar_close)
+
 alertcondition(dt_confDB, title="DT Çift Dip Onaylandı", message="DT Çift Dip onaylı kırılım.")
 alertcondition(dt_confDT, title="DT Çift Tepe Onaylandı", message="DT Çift Tepe onaylı kırılım.")
 alertcondition(dt_confTB, title="DT Üçlü Dip Onaylandı", message="DT Üçlü Dip onaylı kırılım.")
@@ -2755,4 +2847,7 @@ alertcondition(trailMoved, title="Trail Stop Yükseldi")
 
 // SQZ bağımsız sinyal alarmları (Signal modu)
 alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val > 0), title="SQZ Long Release")
-alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val < 0), title="SQZ Short Release")
+// alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val < 0), title="SQZ Short Release")
+
+// FO Forecast Oscillator BUY signal
+alertcondition(fo_finalSignal and fo_risk > 0, title="FO BUY Signal", message="Forecast Oscillator BUY signal fired")
