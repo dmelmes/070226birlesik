@@ -2410,6 +2410,7 @@ fo_lenFosc           = input.int(14, "FO Length (Forecast Oscillator)", minval=1
 fo_lenTrend          = input.int(50, "FO Trend Length (LinReg)", minval=1, group=grpFO)
 fo_lenRSI            = input.int(14, "FO RSI Length", minval=1, group=grpFO)
 fo_lenVol            = input.int(20, "FO Volume SMA Length", minval=1, group=grpFO)
+fo_vol_hard_gate     = input.bool(false, "FO Volume Hard Gate (true=block signal, false=info only)", group=grpFO)
 fo_lenATR            = input.int(14, "FO ATR Length", minval=1, group=grpFO)
 fo_slMult            = input.float(1.0, "FO Stop Loss ATR Multiplier", step=0.1, minval=0.1, group=grpFO)
 fo_rr1               = input.float(1.0, "FO Target1 R-Multiple", step=0.25, minval=0.1, group=grpFO)
@@ -2487,8 +2488,11 @@ fo_crossover = ta.crossover(fo_fosc, 0)
 // Cooldown check
 fo_cooldownOK = na(fo_lastSignalBar) or (bar_index - fo_lastSignalBar) >= fo_cooldownBars
 
+// Volume filter: apply as hard gate only if enabled, otherwise just info
+fo_volFilter = fo_vol_hard_gate ? fo_volOK : true
+
 // Combine all filters
-fo_signal = fo_enable and fo_crossover and fo_trendUp and fo_rsiOK and fo_volOK and fo_xuOK and fo_cooldownOK
+fo_signal = fo_enable and fo_crossover and fo_trendUp and fo_rsiOK and fo_volFilter and fo_xuOK and fo_cooldownOK
 
 // Confirmation logic
 fo_finalSignal = fo_signal and (fo_confirm_on_close ? barstate.isconfirmed : true)
@@ -2516,8 +2520,12 @@ if fo_finalSignal and fo_risk > 0
     fo_t2Str = fo_fmt(fo_target2)
     fo_tfStr = f_tf_label(timeframe.period)
     
+    // Volume status info
+    fo_volRatio = volume / fo_volSma
+    fo_volInfo = fo_volOK ? "" : " VOL:ZAYIF(" + str.tostring(fo_volRatio, "#.##") + "x)"
+    
     // Build message - short parseable format
-    fo_msg = "FO_AL|" + syminfo.ticker + "|TF=" + fo_tfStr + "|E=" + fo_entryStr + "|SL=" + fo_stopStr + "|T1=" + fo_t1Str + "|T2=" + fo_t2Str
+    fo_msg = "FO_AL|" + syminfo.ticker + "|TF=" + fo_tfStr + "|E=" + fo_entryStr + "|SL=" + fo_stopStr + "|T1=" + fo_t1Str + "|T2=" + fo_t2Str + fo_volInfo
     
     // Determine chat_id (use dedicated or fall back to default)
     fo_chatId = fo_chat_id == "" ? telegramChatId : fo_chat_id
