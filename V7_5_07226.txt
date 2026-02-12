@@ -1638,12 +1638,15 @@ confirmWrap(c)=> (not useCloseConfirm or barstate.isconfirmed)?c:false
 evBuy   = confirmWrap(includeBuyFlip        and buySignal          and htfOkLongAlert)
 evSell  = confirmWrap(includeSellFlip       and sellSignal         and htfOkShortAlert)
 evLInt  = confirmWrap(includeLongIntersect  and longIntersectAlert)
+// BANKO KESIŞME AL - Dual mode: Repaint (realtime) + Confirmed (bar close)
+evLInt_Repaint    = includeLongIntersect and longIntersectAlert  // Realtime, no confirmation
+evLInt_Confirmed  = confirmWrap(includeLongIntersect and longIntersectAlert)  // Bar close confirmed
 evSInt  = confirmWrap(includeShortIntersect and shortIntersectAlert)
 evHit1  = confirmWrap(includeHitR1          and hitR1)
 evHit2  = confirmWrap(includeHitR2          and hitR2)
 evTrail = confirmWrap(includeTrailMove      and trailMoved)
 evExit  = confirmWrap(includeExit           and (exitLong or exitShort))
-if evLInt
+if evLInt or evLInt_Repaint or evLInt_Confirmed
     evBuy := false
 if evSInt
     evSell := false
@@ -1702,6 +1705,9 @@ var int tExit  = na
 allowBuy   = fAllow(evBuy,   dayBuy,   tBuy)   and not buyBlockedByPct
 allowSell  = fAllow(evSell,  daySell,  tSell)
 allowLInt  = fAllow(evLInt,  dayLInt,  tLInt)  and not buyBlockedByPct
+// BANKO KESIŞME AL - Dual mode allows
+allowLInt_Repaint   = fAllow(evLInt_Repaint,   dayLInt,  tLInt)  and not buyBlockedByPct
+allowLInt_Confirmed = fAllow(evLInt_Confirmed, dayLInt,  tLInt)  and not buyBlockedByPct
 allowSInt  = fAllow(evSInt,  daySInt,  tSInt)
 allowHitR1 = fAllow(evHit1,  dayR1,    tR1)
 allowHitR2 = fAllow(evHit2,  dayR2,    tR2)
@@ -2012,6 +2018,18 @@ if canSendUnified
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("ST AL Flip", "ST Buy Flip", f_tf_label(timeframe.period))
     else if mgChartFired
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("Multi Güçlü AL", "Multi Strong BUY", f_tf_label(timeframe.period))
+
+// BANKO KESIŞME AL - Dual messages: Repaint + Confirmed
+if allowLInt_Repaint
+    _bankoReprintMsg = "⚡ BANKO KESİŞME AL [REPAINT]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n⚠️ Uyarı: Bar kapanmadan önce kaybolabilir!" + f_prev_bullish_note()
+    _bankoReprintId = "BANKO_REPAINT_" + str.tostring(bar_index)
+    send_event(_bankoReprintId, _bankoReprintMsg, telegramChatId, alert.freq_once_per_bar)
+
+if allowLInt_Confirmed
+    _bankoConfMsg = "✓ BANKO KESİŞME AL [CONFIRMED]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n✅ Kesin sinyal - Bar kapatıldı" + f_prev_bullish_note()
+    _bankoConfId = "BANKO_CONFIRMED_" + str.tostring(time)
+    send_event(_bankoConfId, _bankoConfMsg, telegramChatId, alert.freq_once_per_bar_close)
+    [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("BANKO KESİŞME AL", "BANKO LONG INTERSECT", f_tf_label(timeframe.period))
 
 // ---
 // 14) MTF ST — Safe Boot ile
@@ -2388,8 +2406,8 @@ enableAlphaPerf      = input.bool(false, "AT Module Enable", group=grpAT)
 alphaChatId          = input.string("", "AT Telegram chat_id (boş=DEFAULT)", group=grpAT)
 alpha_coeff          = input.float(1.0, "AT Multiplier", step=0.1, minval=0.1, group=grpAT)
 alpha_AP             = input.int(14, "AT Common Period", minval=1, group=grpAT)
-alpha_evalBars_4h    = input.int(60, "AT 4H Eval Bars (~10 days)", minval=1, group=grpAT)
-alpha_evalBars_1d    = input.int(10, "AT 1D Eval Bars", minval=1, group=grpAT)
+alpha_evalBars_4h    = input.int(120, "AT 4H Eval Bars (~20 sessions)", minval=1, group=grpAT)
+alpha_evalBars_1d    = input.int(20, "AT 1D Eval Bars (20 days)", minval=1, group=grpAT)
 alpha_targetPct      = input.float(20.0, "AT Target % (max run-up)", step=0.5, minval=0.1, group=grpAT)
 alpha_lastN          = input.int(3, "AT Last N signals to track", minval=1, maxval=10, group=grpAT)
 alpha_minWins        = input.int(2, "AT Min Wins required", minval=1, maxval=10, group=grpAT)
@@ -2622,7 +2640,7 @@ if enableAlphaPerf and not safeBoot
             if _gatePass
                 // Build alert message (single-line concatenation for Pine v5)
                 _prevOutcomes = f_at_outcomes_str("4H")
-                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + str.tostring(alpha_minWins) + "'si, " + str.tostring(alpha_evalBars_4h) + " bar (~10 seans) içinde >= %" + str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
+                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + str.tostring(alpha_minWins) + "'si, " + str.tostring(alpha_evalBars_4h) + " bar (~20 seans) içinde >= %" + str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
                 _msgTitle = "🎯 BAŞARILI 4 SAAT AL (AlphaTrend CONFIRMED)"
                 _msgBody = "[" + syminfo.ticker + "] 4H\nFiyat: " + fmtMint(at4h_entry) + "\n" + _criterionMsg
                 if _prevOutcomes != ""
@@ -2667,7 +2685,7 @@ if enableAlphaPerf and not safeBoot
             if _gatePass
                 // Build alert message (single-line concatenation for Pine v5)
                 _prevOutcomes = f_at_outcomes_str("1D")
-                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + str.tostring(alpha_minWins) + "'si, " + str.tostring(alpha_evalBars_1d) + " gün içinde >= %" + str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
+                _criterionMsg = "Kriter: Son " + str.tostring(alpha_lastN) + " AL'in en az " + str.tostring(alpha_minWins) + "'si, " + str.tostring(alpha_evalBars_1d) + " gün (~20 gün) içinde >= %" + str.tostring(alpha_targetPct, "#.#") + " max yükseliş."
                 _msgTitle = "🎯 BAŞARILI 1 GÜN AL (AlphaTrend CONFIRMED)"
                 _msgBody = "[" + syminfo.ticker + "] 1D\nFiyat: " + fmtMint(at1d_entry) + "\n" + _criterionMsg
                 if _prevOutcomes != ""
@@ -2686,6 +2704,13 @@ if enableAlphaPerf and not safeBoot
             at1d_evalStartBar := bar_index
             at1d_evalMaxHigh := high
 
+// AlphaTrend Test Ping - once per bar close
+if enableAlphaPerf and not safeBoot and barstate.isconfirmed
+    _at_chatId = alphaChatId == "" ? telegramChatId : alphaChatId
+    _testMsg = "✓ AlphaTrend Test Ping [" + syminfo.ticker + "]\nBar closed at: " + str.tostring(time) + "\nPrice: " + fmtMint(close)
+    _testId = "AT_TEST_PING_" + str.tostring(time)
+    send_event(_testId, _testMsg, _at_chatId, alert.freq_once_per_bar_close)
+
 // =========================================================================
 
 // DT alertconditions disabled (DT module removed to save tokens)
@@ -2698,6 +2723,9 @@ if enableAlphaPerf and not safeBoot
 alertcondition(allowBuy,   title="ST Flip AL (HTF filtreli/Grace)")
 alertcondition(allowSell,  title="ST Flip SAT (HTF filtreli)")
 alertcondition(allowLInt,  title="BANKO KESİŞME AL (HTF/Grace)")
+// BANKO KESIŞME AL - Dual mode alertconditions
+alertcondition(allowLInt_Repaint,   title="BANKO KESİŞME AL [REPAINT]")
+alertcondition(allowLInt_Confirmed, title="BANKO KESİŞME AL [CONFIRMED]")
 alertcondition(allowSInt,  title="BANKO KESİŞME SAT (HTF)")
 alertcondition(allowHitR1, title="Hedef1 (R1) Ulaşıldı")
 alertcondition(allowHitR2, title="Hedef2 (R2) Ulaşıldı")
