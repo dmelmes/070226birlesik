@@ -1639,14 +1639,14 @@ evBuy   = confirmWrap(includeBuyFlip        and buySignal          and htfOkLong
 evSell  = confirmWrap(includeSellFlip       and sellSignal         and htfOkShortAlert)
 evLInt  = confirmWrap(includeLongIntersect  and longIntersectAlert)
 // BANKO KESIŞME AL - Dual mode: Repaint (realtime) + Confirmed (bar close)
-evLInt_Repaint    = includeLongIntersect and longIntersectAlert  // Realtime, no confirmation
+// evLInt_Repaint    = includeLongIntersect and longIntersectAlert  // Realtime, no confirmation - DISABLED per user request
 evLInt_Confirmed  = confirmWrap(includeLongIntersect and longIntersectAlert)  // Bar close confirmed
 evSInt  = confirmWrap(includeShortIntersect and shortIntersectAlert)
 evHit1  = confirmWrap(includeHitR1          and hitR1)
 evHit2  = confirmWrap(includeHitR2          and hitR2)
 evTrail = confirmWrap(includeTrailMove      and trailMoved)
 evExit  = confirmWrap(includeExit           and (exitLong or exitShort))
-if evLInt or evLInt_Repaint or evLInt_Confirmed
+if evLInt or evLInt_Confirmed  // or evLInt_Repaint - REMOVED
     evBuy := false
 if evSInt
     evSell := false
@@ -1705,8 +1705,8 @@ var int tExit  = na
 allowBuy   = fAllow(evBuy,   dayBuy,   tBuy)   and not buyBlockedByPct
 allowSell  = fAllow(evSell,  daySell,  tSell)
 allowLInt  = fAllow(evLInt,  dayLInt,  tLInt)  and not buyBlockedByPct
-// BANKO KESIŞME AL - Dual mode allows
-allowLInt_Repaint   = fAllow(evLInt_Repaint,   dayLInt,  tLInt)  and not buyBlockedByPct
+// BANKO KESIŞME AL - CONFIRMED only (REPAINT disabled per user request)
+// allowLInt_Repaint   = fAllow(evLInt_Repaint,   dayLInt,  tLInt)  and not buyBlockedByPct  // DISABLED
 allowLInt_Confirmed = fAllow(evLInt_Confirmed, dayLInt,  tLInt)  and not buyBlockedByPct
 allowSInt  = fAllow(evSInt,  daySInt,  tSInt)
 allowHitR1 = fAllow(evHit1,  dayR1,    tR1)
@@ -2019,16 +2019,17 @@ if canSendUnified
     else if mgChartFired
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("Multi Güçlü AL", "Multi Strong BUY", f_tf_label(timeframe.period))
 
-// BANKO KESIŞME AL - Dual messages: Repaint + Confirmed
-if allowLInt_Repaint
-    _bankoReprintMsg = "⚡ BANKO KESİŞME AL [REPAINT]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n⚠️ Uyarı: Bar kapanmadan önce kaybolabilir!" + f_prev_bullish_note()
-    _bankoReprintId = "BANKO_REPAINT_" + str.tostring(bar_index)
-    send_event(_bankoReprintId, _bankoReprintMsg, telegramChatId, alert.freq_once_per_bar)
+// BANKO KESIŞME AL - CONFIRMED only (REPAINT disabled per user request)
+// All BANKO AL messages go to dedicated chat_id: telegramChatIdMtfBanko
+// if allowLInt_Repaint  // DISABLED
+//     _bankoReprintMsg = "⚡ BANKO KESİŞME AL [REPAINT]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n⚠️ Uyarı: Bar kapanmadan önce kaybolabilir!" + f_prev_bullish_note()
+//     _bankoReprintId = "BANKO_REPAINT_" + str.tostring(bar_index)
+//     send_event(_bankoReprintId, _bankoReprintMsg, telegramChatId, alert.freq_once_per_bar)
 
 if allowLInt_Confirmed
     _bankoConfMsg = "✓ BANKO KESİŞME AL [CONFIRMED]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n✅ Kesin sinyal - Bar kapatıldı" + f_prev_bullish_note()
     _bankoConfId = "BANKO_CONFIRMED_" + str.tostring(time)
-    send_event(_bankoConfId, _bankoConfMsg, telegramChatId, alert.freq_once_per_bar_close)
+    send_event(_bankoConfId, _bankoConfMsg, telegramChatIdMtfBanko, alert.freq_once_per_bar_close)
     [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("BANKO KESİŞME AL", "BANKO LONG INTERSECT", f_tf_label(timeframe.period))
 
 // ---
@@ -2747,8 +2748,8 @@ if enableAlphaPerf and not safeBoot and barstate.isconfirmed
 alertcondition(allowBuy,   title="ST Flip AL (HTF filtreli/Grace)")
 alertcondition(allowSell,  title="ST Flip SAT (HTF filtreli)")
 alertcondition(allowLInt,  title="BANKO KESİŞME AL (HTF/Grace)")
-// BANKO KESIŞME AL - Dual mode alertconditions
-alertcondition(allowLInt_Repaint,   title="BANKO KESİŞME AL [REPAINT]")
+// BANKO KESIŞME AL - CONFIRMED only (REPAINT disabled per user request)
+// alertcondition(allowLInt_Repaint,   title="BANKO KESİŞME AL [REPAINT]")  // DISABLED
 alertcondition(allowLInt_Confirmed, title="BANKO KESİŞME AL [CONFIRMED]")
 alertcondition(allowSInt,  title="BANKO KESİŞME SAT (HTF)")
 alertcondition(allowHitR1, title="Hedef1 (R1) Ulaşıldı")
