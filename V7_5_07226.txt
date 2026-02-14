@@ -2425,6 +2425,10 @@ fo_round_to_mintick  = input.bool(true, "FO Round to mintick", group=grpFO)
 // =========================================================================
 // FO — Forecast Oscillator Calculation
 // =========================================================================
+// Declare variables in outer scope (Pine v5 requirement)
+var bool fo_finalSignal = false
+var float fo_risk = 0.0
+
 if fo_enable
     // 1. Calculate Forecast Oscillator
     fo_hi = ta.highest(high, fo_lenFosc)
@@ -2461,7 +2465,7 @@ if fo_enable
     fo_signal = fo_enable and fo_crossover and fo_trendUp and fo_rsiOK and fo_volFilter and fo_xuOK and fo_cooldownOK
     
     // 9. Confirm on Close (optional)
-    fo_finalSignal = fo_confirm_on_close ? (fo_signal and barstate.isconfirmed) : fo_signal
+    fo_finalSignal := fo_confirm_on_close ? (fo_signal and barstate.isconfirmed) : fo_signal
     
     // 10. Update Cooldown
     if fo_finalSignal
@@ -2470,7 +2474,7 @@ if fo_enable
     // 11. Calculate Risk and Targets
     fo_atr = ta.atr(fo_lenATR)
     fo_stop = close - (fo_atr * fo_slMult)
-    fo_risk = close - fo_stop
+    fo_risk := close - fo_stop
     fo_target1 = close + (fo_risk * fo_rr1)
     fo_target2 = close + (fo_risk * fo_rr2)
     
@@ -2498,9 +2502,9 @@ if fo_enable
         
         send_event(fo_eventId, fo_msg, fo_chatId, alert.freq_once_per_bar_close)
 else
-    // FO disabled - initialize variables to prevent errors
-    fo_finalSignal = false
-    fo_risk = 0.0
+    // FO disabled - reset variables to prevent errors
+    fo_finalSignal := false
+    fo_risk := 0.0
 
 // ---
 // ---
