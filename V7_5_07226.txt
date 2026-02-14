@@ -2422,6 +2422,86 @@ fo_xuLen             = input.int(50, "FO XU100 Trend Length", minval=1, group=gr
 fo_confirm_on_close  = input.bool(true, "FO Confirm on Bar Close", group=grpFO)
 fo_round_to_mintick  = input.bool(true, "FO Round to mintick", group=grpFO)
 
+// =========================================================================
+// FO — Forecast Oscillator Calculation
+// =========================================================================
+if fo_enable
+    // 1. Calculate Forecast Oscillator
+    fo_hi = ta.highest(high, fo_lenFosc)
+    fo_lo = ta.lowest(low, fo_lenFosc)
+    fo_fosc = 100 * (close - (fo_hi + fo_lo) / 2) / (fo_hi - fo_lo)
+    
+    // 2. Trend Filter (Linear Regression uptrend)
+    fo_linReg = ta.linreg(close, fo_lenTrend, 0)
+    fo_trendUp = fo_linReg > fo_linReg[1]
+    
+    // 3. RSI Filter
+    fo_rsi = ta.rsi(close, fo_lenRSI)
+    fo_rsiOK = fo_rsi > 50 and fo_rsi > fo_rsi[1]
+    
+    // 4. Volume Filter (soft mode by default, hard gate optional)
+    fo_volSma = ta.sma(volume, fo_lenVol)
+    fo_volOK = volume > fo_volSma
+    
+    // Apply volume filter based on mode
+    fo_volFilter = fo_vol_hard_gate ? fo_volOK : true
+    
+    // 5. XU100 Market Filter (optional)
+    fo_xuTrend = ta.linreg(close, fo_xuLen, 0)
+    fo_xuOK = fo_use_xu100 ? (fo_xuTrend > fo_xuTrend[1]) : true
+    
+    // 6. Crossover Signal
+    fo_crossover = ta.crossover(fo_fosc, 0)
+    
+    // 7. Cooldown Check
+    var int fo_lastSignalBar = na
+    fo_cooldownOK = na(fo_lastSignalBar) or (bar_index - fo_lastSignalBar) >= fo_cooldownBars
+    
+    // 8. Combine All Filters
+    fo_signal = fo_enable and fo_crossover and fo_trendUp and fo_rsiOK and fo_volFilter and fo_xuOK and fo_cooldownOK
+    
+    // 9. Confirm on Close (optional)
+    fo_finalSignal = fo_confirm_on_close ? (fo_signal and barstate.isconfirmed) : fo_signal
+    
+    // 10. Update Cooldown
+    if fo_finalSignal
+        fo_lastSignalBar := bar_index
+    
+    // 11. Calculate Risk and Targets
+    fo_atr = ta.atr(fo_lenATR)
+    fo_stop = close - (fo_atr * fo_slMult)
+    fo_risk = close - fo_stop
+    fo_target1 = close + (fo_risk * fo_rr1)
+    fo_target2 = close + (fo_risk * fo_rr2)
+    
+    // Round to mintick if enabled
+    if fo_round_to_mintick
+        fo_stop := math.round(fo_stop / syminfo.mintick) * syminfo.mintick
+        fo_target1 := math.round(fo_target1 / syminfo.mintick) * syminfo.mintick
+        fo_target2 := math.round(fo_target2 / syminfo.mintick) * syminfo.mintick
+    
+    // 12. Build Alert Message with Volume Info
+    if fo_finalSignal
+        fo_volRatio = volume / fo_volSma
+        fo_volInfo = fo_volOK ? "" : " VOL:ZAYIF(" + str.tostring(fo_volRatio, "#.##") + "x)"
+        
+        fo_tfStr = timeframe.period
+        fo_entryStr = str.tostring(close, "#.##")
+        fo_stopStr = str.tostring(fo_stop, "#.##")
+        fo_t1Str = str.tostring(fo_target1, "#.##")
+        fo_t2Str = str.tostring(fo_target2, "#.##")
+        
+        fo_msg = "FO_AL|" + syminfo.ticker + "|TF=" + fo_tfStr + "|E=" + fo_entryStr + "|SL=" + fo_stopStr + "|T1=" + fo_t1Str + "|T2=" + fo_t2Str + fo_volInfo
+        
+        fo_chatId = fo_chat_id == "" ? telegramChatId : fo_chat_id
+        fo_eventId = "FO_BUY_" + str.tostring(time)
+        
+        send_event(fo_eventId, fo_msg, fo_chatId, alert.freq_once_per_bar_close)
+else
+    // FO disabled - initialize variables to prevent errors
+    fo_finalSignal = false
+    fo_risk = 0.0
+
 // ---
 // ---
 // AT — AlphaTrend Confirmed BUY Module with Historical Performance Gate
