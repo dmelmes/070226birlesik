@@ -2507,6 +2507,101 @@ else
     fo_risk := 0.0
 
 // ---
+// TURBO AL — High-Momentum Entry System for BIST (1-3 day, +10% target)
+// Volume Explosion + Momentum + Breakout = Quick moves
+// ---
+grpTURBO = "TURBO AL — Momentum Entry"
+turbo_enable        = input.bool(false, "TURBO AL Module Enable", group=grpTURBO)
+turbo_chat_id       = input.string("", "TURBO Chat ID (boş=default)", group=grpTURBO)
+turbo_volMultiple   = input.float(2.0, "Volume Multiplier (min 2x avg)", minval=1.5, step=0.1, group=grpTURBO)
+turbo_rsiLen        = input.int(14, "RSI Length", minval=5, group=grpTURBO)
+turbo_rsi7Len       = input.int(7, "RSI Fast Length", minval=3, group=grpTURBO)
+turbo_rsi7Thresh    = input.float(65, "RSI Fast Threshold", minval=50, step=1, group=grpTURBO)
+turbo_emaLen        = input.int(21, "EMA Length", minval=10, group=grpTURBO)
+turbo_breakoutLen   = input.int(10, "Breakout Lookback", minval=5, group=grpTURBO)
+turbo_atrLen        = input.int(14, "ATR Length", minval=10, group=grpTURBO)
+turbo_slMult        = input.float(1.5, "Stop Loss (ATR mult)", minval=0.5, step=0.1, group=grpTURBO)
+turbo_tp1Pct        = input.float(7.0, "TP1 %", minval=3, step=0.5, group=grpTURBO)
+turbo_tp2Pct        = input.float(12.0, "TP2 %", minval=5, step=0.5, group=grpTURBO)
+turbo_cooldown      = input.int(5, "Cooldown Bars", minval=1, group=grpTURBO)
+
+var bool turbo_signal = false
+var int turbo_lastSignalBar = -999
+
+if turbo_enable and not safeBoot
+    // Filter 1: Volume Explosion (MOST CRITICAL for BIST)
+    turbo_volAvg = ta.sma(volume, 20)
+    turbo_volLast5Max = ta.highest(volume, 5)[1]
+    turbo_volFilter = volume > turbo_volMultiple * turbo_volAvg and volume > 1.5 * turbo_volLast5Max
+    
+    // Filter 2: Momentum Acceleration
+    turbo_rsi14 = ta.rsi(close, turbo_rsiLen)
+    turbo_rsi7 = ta.rsi(close, turbo_rsi7Len)
+    turbo_rsiCross = ta.crossover(turbo_rsi14, 50)
+    turbo_ema21 = ta.ema(close, turbo_emaLen)
+    turbo_momentumFilter = turbo_rsiCross and turbo_rsi7 > turbo_rsi7Thresh and close > turbo_ema21
+    
+    // Filter 3: Price Breakout
+    turbo_highestHigh = ta.highest(high, turbo_breakoutLen)[1]
+    turbo_atr = ta.atr(turbo_atrLen)
+    turbo_range = high - low
+    turbo_breakoutFilter = close > turbo_highestHigh and close > open and turbo_range > 1.5 * turbo_atr
+    
+    // Combine all filters + cooldown
+    turbo_cooldownOK = bar_index - turbo_lastSignalBar >= turbo_cooldown
+    turbo_signal := turbo_volFilter and turbo_momentumFilter and turbo_breakoutFilter and turbo_cooldownOK and barstate.isconfirmed
+    
+    // Calculate risk levels when signal fires
+    if turbo_signal
+        turbo_lastSignalBar := bar_index
+        
+        // Risk management
+        turbo_entry = close
+        turbo_sl = turbo_entry - (turbo_slMult * turbo_atr)
+        turbo_tp1 = turbo_entry * (1 + turbo_tp1Pct / 100)
+        turbo_tp2 = turbo_entry * (1 + turbo_tp2Pct / 100)
+        turbo_slPct = ((turbo_entry - turbo_sl) / turbo_entry) * 100
+        turbo_rr1 = turbo_tp1Pct / turbo_slPct
+        turbo_rr2 = turbo_tp2Pct / turbo_slPct
+        
+        // Format for display
+        turbo_entryStr = str.tostring(turbo_entry, "#.##")
+        turbo_slStr = str.tostring(turbo_sl, "#.##")
+        turbo_tp1Str = str.tostring(turbo_tp1, "#.##")
+        turbo_tp2Str = str.tostring(turbo_tp2, "#.##")
+        turbo_slPctStr = str.tostring(turbo_slPct, "#.#")
+        turbo_tp1PctStr = str.tostring(turbo_tp1Pct, "#.#")
+        turbo_tp2PctStr = str.tostring(turbo_tp2Pct, "#.#")
+        turbo_volRatio = str.tostring(volume / turbo_volAvg, "#.#")
+        turbo_rsi14Str = str.tostring(turbo_rsi14, "#")
+        turbo_rsi7Str = str.tostring(turbo_rsi7, "#")
+        
+        // Build Turkish message
+        turbo_msg = "🚀 TURBO AL - [" + syminfo.ticker + "]\n\n"
+        turbo_msg += "📊 Giriş: " + turbo_entryStr + " TL\n"
+        turbo_msg += "⛔ Stop: " + turbo_slStr + " TL (-" + turbo_slPctStr + "%)\n"
+        turbo_msg += "🎯 TP1 (50%): " + turbo_tp1Str + " TL (+" + turbo_tp1PctStr + "%)\n"
+        turbo_msg += "🎯 TP2 (30%): " + turbo_tp2Str + " TL (+" + turbo_tp2PctStr + "%)\n"
+        turbo_msg += "⏱️ Time Exit: 3 gün\n\n"
+        turbo_msg += "📈 Sinyal Nedenleri:\n"
+        turbo_msg += "✅ Hacim patlaması (" + turbo_volRatio + "x ortalama)\n"
+        turbo_msg += "✅ RSI momentum dönüşü (14: " + turbo_rsi14Str + ", 7: " + turbo_rsi7Str + ")\n"
+        turbo_msg += "✅ " + str.tostring(turbo_breakoutLen) + " günlük direnç kırıldı\n\n"
+        turbo_msg += "⚡ Risk: " + turbo_slPctStr + "% | Hedef1: " + turbo_tp1PctStr + "% | R:R = 1:" + str.tostring(turbo_rr1, "#.#") + "\n"
+        turbo_msg += "🕐 " + str.format("{0,time,HH:mm}", time) + "\n\n"
+        turbo_msg += "#TURBO #MOMENTUM #BIST"
+        
+        // Send to Telegram
+        turbo_eventId = "TURBO_" + syminfo.ticker + "_" + str.tostring(time)
+        turbo_chatToUse = turbo_chat_id != "" ? turbo_chat_id : telegramChatId
+        send_event(turbo_eventId, turbo_msg, turbo_chatToUse, alert.freq_once_per_bar_close)
+else
+    turbo_signal := false
+
+// Visualization
+plotshape(turbo_signal, "🚀 TURBO", style=shape.labelup, location=location.belowbar, color=color.new(color.orange, 0), size=size.small, text="TURBO", textcolor=color.white)
+
+// ---
 // ---
 // AT — AlphaTrend Confirmed BUY Module with Historical Performance Gate
 // REFACTORED: Fix MTF evaluation bug, implement win-rate gate
