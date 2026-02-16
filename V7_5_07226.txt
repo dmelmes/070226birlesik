@@ -2143,10 +2143,48 @@ sendMtf(tf, tfLabel, useTf)=>
                 // This prevents spam: same mtfTime = same HTF bar = single alert
                 id = "MTF_BANKO_AL_"+tfLabel+"_"+str.tostring(mtfTime)
                 prevNoteMtf = f_prev_bullish_note()
+                
+                // Calculate analytics for MTF BANKO AL
+                _mtf_volRatio = mtfVolume / ta.sma(mtfVolume, 20)
+                _mtf_rsi = ta.rsi(mtfClose, 14)
+                _mtf_atr = ta.atr(14)
+                _mtf_atrPct = (_mtf_atr / mtfClose) * 100
+                
+                // Scoring system for strength grade
+                _mtf_score = 0
+                if _mtf_volRatio > 2.0
+                    _mtf_score += 3
+                else if _mtf_volRatio > 1.5
+                    _mtf_score += 2
+                else if _mtf_volRatio > 1.2
+                    _mtf_score += 1
+                
+                if _mtf_rsi > 60
+                    _mtf_score += 2
+                else if _mtf_rsi > 55
+                    _mtf_score += 1
+                
+                if _mtf_atrPct > 3.0
+                    _mtf_score += 1
+                
+                _mtf_grade = _mtf_score >= 5 ? "A (Güçlü)" : _mtf_score >= 3 ? "B (İyi)" : "C (Orta)"
+                _mtf_rsiTrend = _mtf_rsi > _mtf_rsi[1] ? "↑" : _mtf_rsi < _mtf_rsi[1] ? "↓" : "→"
+                _mtf_volStatus = _mtf_volRatio > 1.5 ? "✅" : _mtf_volRatio > 1.0 ? "⚠️" : "❌"
+                _mtf_momStatus = _mtf_rsi > 55 ? "✅" : "⚠️"
+                
                 // Add REALTIME/CONFIRMED label based on tfClosed status
                 statusLabel = tfClosed ? " [✓CONFIRMED]" : " [⚡REALTIME]"
-                // Message format: TXT_LINT + " (" + tfLabel + ")" + status
-                msg = evStrBuy + " (" + tfLabel + ")" + statusLabel + " [" + syminfo.ticker + "]\nFiyat: " + fmtMint(mtfClose) + prevNoteMtf
+                
+                // Build enhanced message with analytics
+                msg = evStrBuy + " (" + tfLabel + ")" + statusLabel + "\n[" + syminfo.ticker + "]\nFiyat: " + fmtMint(mtfClose) + 
+                      "\n\n📊 Analiz:\n" +
+                      "Hacim: " + str.tostring(_mtf_volRatio, "#.#") + "x ortalama " + _mtf_volStatus + "\n" +
+                      "Momentum: RSI " + str.tostring(_mtf_rsi, "#.#") + " " + _mtf_rsiTrend + " " + _mtf_momStatus + "\n" +
+                      "Volatilite: ATR " + str.tostring(_mtf_atrPct, "#.##") + "%\n" +
+                      "Güç: " + _mtf_grade +
+                      (tfClosed ? "\n\n✅ Kesin sinyal - Bar kapatıldı" : "") +
+                      prevNoteMtf
+                
                 // alert.freq_once_per_bar for realtime; dedup handled by send_event with mtfTime in id
                 // MTF BANKO alerts sent to dedicated chat ID
                 send_event(id, msg, telegramChatIdMtfBanko, alert.freq_once_per_bar)
