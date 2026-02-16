@@ -2660,6 +2660,8 @@ turbo2h_cooldown = input.int(3, "Cooldown (bars)", minval=0, group=grpTURBO2H)
 
 // TURBO INTRA 2H Logic
 var int turbo2h_lastSignalBar = -999
+var bool turbo2h_signal = false
+
 if turbo2h_enable and not safeBoot
     // Volume filter (loosened to 1.5x)
     turbo2h_volAvg = ta.sma(volume, 20)
@@ -2681,7 +2683,7 @@ if turbo2h_enable and not safeBoot
     turbo2h_cooldownOK = bar_index - turbo2h_lastSignalBar > turbo2h_cooldown
     
     // Combined signal
-    turbo2h_signal = turbo2h_volFilter and turbo2h_momentumFilter and turbo2h_breakoutFilter and turbo2h_cooldownOK and barstate.isconfirmed
+    turbo2h_signal := turbo2h_volFilter and turbo2h_momentumFilter and turbo2h_breakoutFilter and turbo2h_cooldownOK and barstate.isconfirmed
     
     // Calculate levels
     turbo2h_entry = close
@@ -2719,6 +2721,8 @@ if turbo2h_enable and not safeBoot
         
         // Send event
         send_event(turbo2h_eventId, turbo2h_msg, turbo2h_chatToUse, alert.freq_once_per_bar_close)
+else
+    turbo2h_signal := false
 
 // Visualization
 plotshape(turbo2h_enable and turbo2h_signal, "🚀 TURBO 2H", style=shape.labelup, location=location.belowbar, color=color.new(color.purple, 0), size=size.small, text="2H", textcolor=color.white)
