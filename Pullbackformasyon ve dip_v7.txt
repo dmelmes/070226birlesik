@@ -3307,11 +3307,11 @@ f_calculate_tavan_score() =>
     score = 0.0
     
     // 1. PULLBACK Module Contribution (max 25 points)
-    if dipSignalFinal  // Main DIP signal
+    if allowDipFinal
         score += 15.0
-    if pullbackRank >= dipPullbackRankThreshold
+    if prPullback >= dipPullbackRankThreshold
         score += 5.0
-    if pullbackRank >= strongDipPullbackRank
+    if prPullback >= strongDipPullbackRank
         score += 5.0
     
     // 2. EMA Module Contribution (max 20 points)
@@ -3322,16 +3322,16 @@ f_calculate_tavan_score() =>
     
     // 3. MTF Alignment (max 20 points)
     mtf_bull_count = 0
-    if mtfDipOk1H
+    if mtf_dipFinal_1h
         mtf_bull_count += 1
         score += 5.0
-    if mtfDipOk2H
+    if mtf_dipFinal_2h
         mtf_bull_count += 1
         score += 5.0
-    if mtfDipOk4H
+    if mtf_dipFinal_4h
         mtf_bull_count += 1
         score += 5.0
-    if mtfDipOk1D
+    if mtf_dipFinal_1d
         mtf_bull_count += 1
         score += 5.0
     
@@ -3347,7 +3347,6 @@ f_calculate_tavan_score() =>
         score += 5.0
     
     // 5. Momentum Indicators (max 20 points)
-    // RSI oversold recovery
     curr_rsi = ta.rsi(close, 14)
     if curr_rsi > 50 and curr_rsi < 70
         score += 5.0
@@ -3356,8 +3355,7 @@ f_calculate_tavan_score() =>
     if tavan_4h_rsi > 45 and tavan_4h_rsi < 65
         score += 5.0
     
-    // Price momentum
-    if close > ta.highest(high, 20)  // New 20-bar high
+    if close > ta.highest(high, 20)
         score += 5.0
     
     score
@@ -3375,7 +3373,7 @@ f_build_tavan_msg(score) =>
     // Show active confirmations
     array.push(lines, "AKTİF ONAYLAR:")
     
-    if dipSignalFinal
+    if allowDipFinal
         array.push(lines, "✓ PULLBACK DIP AL Sinyali")
     
     if ema_buy_signal
@@ -3384,15 +3382,14 @@ f_build_tavan_msg(score) =>
     if ema_15m_quality_pass
         array.push(lines, "✓ 15m Kalite Filtreleri")
     
-    // MTF count
     mtf_count = 0
-    if mtfDipOk1H
+    if mtf_dipFinal_1h
         mtf_count += 1
-    if mtfDipOk2H
+    if mtf_dipFinal_2h
         mtf_count += 1
-    if mtfDipOk4H
+    if mtf_dipFinal_4h
         mtf_count += 1
-    if mtfDipOk1D
+    if mtf_dipFinal_1d
         mtf_count += 1
     
     if mtf_count > 0
@@ -3403,7 +3400,6 @@ f_build_tavan_msg(score) =>
     if vol_ratio > 1.2
         array.push(lines, "✓ Yüksek Hacim (×" + str.tostring(math.round(vol_ratio, 2)) + ")")
     
-    // Momentum
     curr_rsi = ta.rsi(close, 14)
     array.push(lines, "✓ RSI(14): " + str.tostring(math.round(curr_rsi, 1)))
     
@@ -3414,7 +3410,6 @@ f_build_tavan_msg(score) =>
     array.push(lines, "⚠️ HEDEF: 1-2 günde TAVAN potansiyeli")
     array.push(lines, "⚠️ STOP: ATR bazlı (" + fmtMintMsg(close - atr*0.8) + ")")
     
-    // Add ATR target
     target_price = close + (atr * 2.0)
     array.push(lines, "🎯 İLK HEDEF: " + fmtMintMsg(target_price) + " (+" + str.tostring(math.round((target_price/close - 1) * 100, 1)) + "%)")
     
