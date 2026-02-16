@@ -2027,43 +2027,7 @@ if canSendUnified
 //     send_event(_bankoReprintId, _bankoReprintMsg, telegramChatId, alert.freq_once_per_bar)
 
 if allowLInt_Confirmed
-    // Enhanced analytics for BANKO AL
-    _banko_volAvg = ta.sma(volume, 20)
-    _banko_volRatio = volume / _banko_volAvg
-    _banko_rsi = ta.rsi(close, 14)
-    _banko_atr = ta.atr(14)
-    _banko_atrPct = (_banko_atr / close) * 100
-    
-    // Determine strength grade
-    _banko_score = 0
-    if _banko_volRatio > 2.0
-        _banko_score += 3
-    else if _banko_volRatio > 1.5
-        _banko_score += 2
-    else if _banko_volRatio > 1.2
-        _banko_score += 1
-    
-    if _banko_rsi > 60
-        _banko_score += 2
-    else if _banko_rsi > 55
-        _banko_score += 1
-    
-    if _banko_atrPct > 3.0
-        _banko_score += 1
-    
-    _banko_grade = _banko_score >= 5 ? "A (Güçlü)" : _banko_score >= 3 ? "B (İyi)" : "C (Orta)"
-    _banko_rsiTrend = _banko_rsi > _banko_rsi[1] ? "↑" : _banko_rsi < _banko_rsi[1] ? "↓" : "→"
-    _banko_volStatus = _banko_volRatio > 1.5 ? "✅" : _banko_volRatio > 1.0 ? "⚠️" : "❌"
-    _banko_momStatus = _banko_rsi > 55 ? "✅" : "⚠️"
-    
-    // Build enhanced message
-    _bankoConfMsg = "✓ BANKO KESİŞME AL [CONFIRMED]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n\n" +
-         "📊 Analiz:\n" +
-         "Hacim: " + str.tostring(_banko_volRatio, "#.#") + "x ortalama " + _banko_volStatus + "\n" +
-         "Momentum: RSI " + str.tostring(_banko_rsi, "#.#") + " " + _banko_rsiTrend + " " + _banko_momStatus + "\n" +
-         "Volatilite: ATR " + str.tostring(_banko_atrPct, "#.##") + "%\n" +
-         "Güç: " + _banko_grade + "\n\n" +
-         "✅ Kesin sinyal - Bar kapatıldı" + f_prev_bullish_note()
+    _bankoConfMsg = "✓ BANKO KESİŞME AL [CONFIRMED]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n✅ Kesin sinyal - Bar kapatıldı" + f_prev_bullish_note()
     _bankoConfId = "BANKO_CONFIRMED_" + str.tostring(time)
     send_event(_bankoConfId, _bankoConfMsg, telegramChatIdMtfBanko, alert.freq_once_per_bar_close)
     [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("BANKO KESİŞME AL", "BANKO LONG INTERSECT", f_tf_label(timeframe.period))
@@ -2636,92 +2600,6 @@ else
 
 // Visualization
 plotshape(turbo_signal, "🚀 TURBO", style=shape.labelup, location=location.belowbar, color=color.new(color.orange, 0), size=size.small, text="TURBO", textcolor=color.white)
-
-// ---
-// TURBO INTRA 2H — 2-Hour Intraday Momentum Entry (Loosened)
-// Target: +6% in 2-12 hours, Optimized for frequent intraday signals
-// ---
-grpTURBO2H = "TURBO INTRA 2H — Intraday Entry"
-
-// Inputs
-turbo2h_enable = input.bool(false, "TURBO INTRA 2H Aktif", group=grpTURBO2H)
-turbo2h_chat_id = input.string("", "TURBO 2H Chat ID (boş=default)", group=grpTURBO2H)
-turbo2h_volMultiple = input.float(1.5, "Volume Çarpanı", minval=1.0, step=0.1, group=grpTURBO2H)
-turbo2h_rsiLen = input.int(14, "RSI Uzunluk", minval=5, group=grpTURBO2H)
-turbo2h_rsi7Len = input.int(7, "Hızlı RSI", minval=3, group=grpTURBO2H)
-turbo2h_rsi7Thresh = input.float(60, "Hızlı RSI Eşik", minval=50, step=1, group=grpTURBO2H)
-turbo2h_emaLen = input.int(21, "EMA Uzunluk", minval=5, group=grpTURBO2H)
-turbo2h_breakoutLen = input.int(7, "Breakout Uzunluk", minval=3, group=grpTURBO2H)
-turbo2h_atrLen = input.int(14, "ATR Uzunluk", minval=5, group=grpTURBO2H)
-turbo2h_slMult = input.float(1.5, "Stop Loss Çarpan", minval=0.5, step=0.1, group=grpTURBO2H)
-turbo2h_tp1Pct = input.float(4.0, "TP1 %", minval=1, step=0.5, group=grpTURBO2H)
-turbo2h_tp2Pct = input.float(6.0, "TP2 %", minval=1, step=0.5, group=grpTURBO2H)
-turbo2h_cooldown = input.int(3, "Cooldown (bars)", minval=0, group=grpTURBO2H)
-
-// TURBO INTRA 2H Logic
-var int turbo2h_lastSignalBar = -999
-if turbo2h_enable and not safeBoot
-    // Volume filter (loosened to 1.5x)
-    turbo2h_volAvg = ta.sma(volume, 20)
-    turbo2h_volMax5 = ta.highest(volume, 5)
-    turbo2h_volFilter = volume > turbo2h_volMultiple * turbo2h_volAvg and volume > 1.3 * turbo2h_volMax5[1]
-    
-    // Momentum filter (loosened thresholds)
-    turbo2h_rsi = ta.rsi(close, turbo2h_rsiLen)
-    turbo2h_rsi7 = ta.rsi(close, turbo2h_rsi7Len)
-    turbo2h_ema = ta.ema(close, turbo2h_emaLen)
-    turbo2h_momentumFilter = turbo2h_rsi > 50 and turbo2h_rsi7 > turbo2h_rsi7Thresh and close > turbo2h_ema
-    
-    // Breakout filter (7-day lookback)
-    turbo2h_highest = ta.highest(high, turbo2h_breakoutLen)[1]
-    turbo2h_atr = ta.atr(turbo2h_atrLen)
-    turbo2h_breakoutFilter = close > turbo2h_highest and close > open and (high - low) > 1.3 * turbo2h_atr
-    
-    // Cooldown check
-    turbo2h_cooldownOK = bar_index - turbo2h_lastSignalBar > turbo2h_cooldown
-    
-    // Combined signal
-    turbo2h_signal = turbo2h_volFilter and turbo2h_momentumFilter and turbo2h_breakoutFilter and turbo2h_cooldownOK and barstate.isconfirmed
-    
-    // Calculate levels
-    turbo2h_entry = close
-    turbo2h_sl = turbo2h_entry - (turbo2h_slMult * turbo2h_atr)
-    turbo2h_tp1 = turbo2h_entry * (1 + turbo2h_tp1Pct / 100)
-    turbo2h_tp2 = turbo2h_entry * (1 + turbo2h_tp2Pct / 100)
-    turbo2h_slPct = ((turbo2h_entry - turbo2h_sl) / turbo2h_entry) * 100
-    turbo2h_rr1 = turbo2h_tp1Pct / turbo2h_slPct
-    
-    // Send alert
-    if turbo2h_signal
-        turbo2h_lastSignalBar := bar_index
-        
-        // Volume ratio for message
-        turbo2h_volRatio = volume / turbo2h_volAvg
-        
-        // Build message
-        turbo2h_msg = "🚀 TURBO INTRA 2H - [" + syminfo.ticker + "]\n\n" +
-             "📊 Giriş: " + fmtMint(turbo2h_entry) + " TL\n" +
-             "⛔ Stop: " + fmtMint(turbo2h_sl) + " TL (-" + str.tostring(turbo2h_slPct, "#.#") + "%)\n" +
-             "🎯 TP1 (60%): " + fmtMint(turbo2h_tp1) + " TL (+" + str.tostring(turbo2h_tp1Pct, "#.#") + "%)\n" +
-             "🎯 TP2 (40%): " + fmtMint(turbo2h_tp2) + " TL (+" + str.tostring(turbo2h_tp2Pct, "#.#") + "%)\n" +
-             "⏱️ Time Exit: 1 gün (24h)\n\n" +
-             "📈 Sinyal Nedenleri:\n" +
-             "✅ Hacim patlaması (" + str.tostring(turbo2h_volRatio, "#.#") + "x ortalama)\n" +
-             "✅ RSI momentum (14: " + str.tostring(turbo2h_rsi, "#.#") + ", 7: " + str.tostring(turbo2h_rsi7, "#.#") + ")\n" +
-             "✅ " + str.tostring(turbo2h_breakoutLen) + " günlük direnç kırıldı\n\n" +
-             "⚡ Risk: " + str.tostring(turbo2h_slPct, "#.#") + "% | Hedef1: " + str.tostring(turbo2h_tp1Pct, "#.#") + "% | R:R = 1:" + str.tostring(turbo2h_rr1, "#.#") + "\n" +
-             "🕐 " + str.format("{0,time,HH:mm}", time) + "\n\n" +
-             "#TURBO2H #INTRADAY #BIST"
-        
-        // Event ID and chat routing
-        turbo2h_eventId = "TURBO2H_" + syminfo.ticker + "_" + str.tostring(time)
-        turbo2h_chatToUse = turbo2h_chat_id != "" ? turbo2h_chat_id : telegramChatId
-        
-        // Send event
-        send_event(turbo2h_eventId, turbo2h_msg, turbo2h_chatToUse, alert.freq_once_per_bar_close)
-
-// Visualization
-plotshape(turbo2h_enable and turbo2h_signal, "🚀 TURBO 2H", style=shape.labelup, location=location.belowbar, color=color.new(color.purple, 0), size=size.small, text="2H", textcolor=color.white)
 
 // ---
 // ---
