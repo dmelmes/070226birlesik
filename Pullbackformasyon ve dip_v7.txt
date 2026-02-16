@@ -150,6 +150,16 @@ ema_buy_chat_id=input.string("-1002672108862","EMA BUY chat_id",group=grpEMA)
 ema_sell_chat_id=input.string("-4779006728","EMA SELL chat_id",group=grpEMA)
 ema_cooldown_min=input.int(60,"EMA Cooldown (dk)",minval=0,group=grpEMA)
 ema_show_labels=input.bool(true,"EMA Label Göster",group=grpEMA)
+// Quality filters for stronger signals
+ema_use_quality_filters=input.bool(true,"Kalite Filtrelerini Kullan (Önerilen)",group=grpEMA,tooltip="15m için ekstra filtreler: EMA20, RSI, Volume, Breakout, Trend")
+
+// ===================== TAVAN MODULE (Best of All Modules) =====================
+grpTAVAN="🚀 TAVAN • Roket Modülü (1-2 Gün)"
+tavan_enable=input.bool(true,"TAVAN Modülü Aktif",group=grpTAVAN,tooltip="Tüm modüllerden en güçlü sinyalleri birleştirir. 1-2 güne TAVAN yapabilecek hisseler.")
+tavan_chat_id=input.string("-1002672108862","TAVAN chat_id",group=grpTAVAN)
+tavan_min_score=input.int(75,"Minimum TAVAN Skoru (0-100)",minval=0,maxval=100,group=grpTAVAN,tooltip="Ne kadar yüksekse o kadar seçici. 75+ önerilir.")
+tavan_show_labels=input.bool(true,"TAVAN Label Göster",group=grpTAVAN)
+tavan_cooldown_hours=input.int(24,"TAVAN Cooldown (saat)",minval=1,group=grpTAVAN,tooltip="Aynı hisse için minimum bekleme süresi")
 
 // ===================== Yardımcılar =====================
 f_clamp_extreme(v, maxAbs)=>
@@ -1828,13 +1838,18 @@ var int ema_lastSellTime = na
     [ta.ema(close, ema_fast), ta.ema(close, ema_slow), barstate.isconfirmed], 
     barmerge.gaps_off, barmerge.lookahead_off)
 
-[ema15m_fast, ema15m_slow] = request.security(syminfo.tickerid, "15", 
-    [ta.ema(close, ema_fast), ta.ema(close, ema_slow)], 
+[ema15m_fast, ema15m_slow, ema15m_close, ema15m_high, ema15m_vol] = request.security(syminfo.tickerid, "15", 
+    [ta.ema(close, ema_fast), ta.ema(close, ema_slow), close, high, volume], 
     barmerge.gaps_off, barmerge.lookahead_off)
 
 // Previous values for cross detection
 [ema1h_fast_prev, ema1h_slow_prev] = request.security(syminfo.tickerid, "60", 
     [ta.ema(close[1], ema_fast), ta.ema(close[1], ema_slow)], 
+    barmerge.gaps_off, barmerge.lookahead_off)
+
+// Additional 15m quality indicators
+[ema15m_ema20, ema15m_rsi, ema15m_highest10, ema15m_vol_sma, ema15m_slow_5ago] = request.security(syminfo.tickerid, "15",
+    [ta.ema(close, 20), ta.rsi(close, 14), ta.highest(high, 10), ta.sma(volume, 10), ta.ema(close[5], ema_slow)],
     barmerge.gaps_off, barmerge.lookahead_off)
 
 // Detect 1H crosses (confirmed bar only)
@@ -1845,12 +1860,23 @@ ema_1h_cross_down = is1hClose and ema1h_fast < ema1h_slow and ema1h_fast_prev >=
 ema_15m_state_bullish = ema15m_fast > ema15m_slow
 ema_15m_state_bearish = ema15m_fast < ema15m_slow
 
+// 15m quality filters (strengthened)
+ema_15m_quality_pass = true
+if ema_use_quality_filters
+    ema_15m_quality_pass := 
+        ema15m_fast > ema15m_slow and           // EMA5 > EMA137
+        ema15m_close > ema15m_ema20 and         // close > EMA20
+        ema15m_rsi > 52 and                     // RSI > 52
+        ema15m_close > ema15m_highest10 and     // close > highest(high, 10) - breakout
+        ema15m_vol > ema15m_vol_sma and         // volume > sma(volume, 10)
+        ema15m_slow > ema15m_slow_5ago          // EMA137 > EMA137[5] - uptrend
+
 // Cooldown check
 ema_cooldown_ok_buy = na(ema_lastBuyTime) or ((time - ema_lastBuyTime) >= (ema_cooldown_min * 60000))
 ema_cooldown_ok_sell = na(ema_lastSellTime) or ((time - ema_lastSellTime) >= (ema_cooldown_min * 60000))
 
-// Final BUY signal: 1H cross up AND 15m state bullish AND cooldown ok
-ema_buy_signal = ema_enable and ema_enable_buy and ema_1h_cross_up and ema_15m_state_bullish and ema_cooldown_ok_buy
+// Final BUY signal: 1H cross up AND 15m state bullish AND quality filters AND cooldown ok
+ema_buy_signal = ema_enable and ema_enable_buy and ema_1h_cross_up and ema_15m_state_bullish and ema_15m_quality_pass and ema_cooldown_ok_buy
 
 // Final SELL signal: 1H cross down AND 15m state bearish AND cooldown ok AND sell enabled
 ema_sell_signal = ema_enable and ema_enable_sell and ema_1h_cross_down and ema_15m_state_bearish and ema_cooldown_ok_sell
@@ -1864,6 +1890,14 @@ f_ema_build_msg(isBuy) =>
     array.push(lines, "")
     array.push(lines, "TETİK: 1 Saat EMA" + str.tostring(ema_fast) + " " + (isBuy ? "yukarı kesti" : "aşağı kesti") + " EMA" + str.tostring(ema_slow))
     array.push(lines, "ONAY: 15 Dakika EMA" + str.tostring(ema_fast) + " " + (isBuy ? ">" : "<") + " EMA" + str.tostring(ema_slow))
+    if ema_use_quality_filters and isBuy
+        array.push(lines, "")
+        array.push(lines, "KALİTE FİLTRELERİ:")
+        array.push(lines, "✓ Close > EMA20: " + fmtMintMsg(ema15m_close) + " > " + fmtMintMsg(ema15m_ema20))
+        array.push(lines, "✓ RSI(14): " + str.tostring(math.round(ema15m_rsi, 1)))
+        array.push(lines, "✓ Breakout: Close > 10-Bar High")
+        array.push(lines, "✓ Volume > SMA(10)")
+        array.push(lines, "✓ EMA137 Uptrend")
     array.push(lines, "")
     array.push(lines, "1 Saat EMA" + str.tostring(ema_fast) + ": " + fmtMintMsg(ema1h_fast))
     array.push(lines, "1 Saat EMA" + str.tostring(ema_slow) + ": " + fmtMintMsg(ema1h_slow))
@@ -3249,3 +3283,166 @@ if sd_enable and sd_enableUpgrade
             upgradeMsg = f_sd_buildUpgradeMsg(false, upgradeTypes, sd_entry, todayPct, liqM, sd_snap_momentumRepaint, curr_momentumRep, sd_snap_patlamaRepaint, curr_patlamaRep, sd_snap_secimRepaint, curr_secimRep, sd_snap_squeezeRepaint, curr_squeezeRep, sd_snap_nearBreakRepaint, curr_nearBreakRep, sd_bbWidthPct, sd_distToHighPct, sd_target, sd_stop)
             send_msg(sd_chatId, upgradeMsg)
             sd_upgradeRepaint_sent := true
+
+// =====================================================================
+// ===================== 5) TAVAN MODULE - ROCKET SIGNALS ==============
+// =====================================================================
+
+// TAVAN combines the strongest signals from all modules
+// Only fires when multiple confirmations align for explosive moves
+
+var int tavan_lastSignalTime = na
+
+// Get additional indicators for scoring
+[tavan_1h_close, tavan_1h_vol, tavan_1h_rsi] = request.security(syminfo.tickerid, "60",
+    [close, volume, ta.rsi(close, 14)],
+    barmerge.gaps_off, barmerge.lookahead_off)
+
+[tavan_4h_close, tavan_4h_rsi] = request.security(syminfo.tickerid, "240",
+    [close, ta.rsi(close, 14)],
+    barmerge.gaps_off, barmerge.lookahead_off)
+
+// Calculate TAVAN score (0-100)
+f_calculate_tavan_score() =>
+    score = 0.0
+    
+    // 1. PULLBACK Module Contribution (max 25 points)
+    if dipSignalFinal  // Main DIP signal
+        score += 15.0
+    if pullbackRank >= dipPullbackRankThreshold
+        score += 5.0
+    if pullbackRank >= strongDipPullbackRank
+        score += 5.0
+    
+    // 2. EMA Module Contribution (max 20 points)
+    if ema_buy_signal
+        score += 10.0
+    if ema_15m_quality_pass
+        score += 10.0
+    
+    // 3. MTF Alignment (max 20 points)
+    mtf_bull_count = 0
+    if mtfDipOk1H
+        mtf_bull_count += 1
+        score += 5.0
+    if mtfDipOk2H
+        mtf_bull_count += 1
+        score += 5.0
+    if mtfDipOk4H
+        mtf_bull_count += 1
+        score += 5.0
+    if mtfDipOk1D
+        mtf_bull_count += 1
+        score += 5.0
+    
+    // 4. Volume Confirmation (max 15 points)
+    vol_ratio = volume / ta.sma(volume, 20)
+    if vol_ratio > 1.5
+        score += 10.0
+    else if vol_ratio > 1.2
+        score += 5.0
+    
+    tavan_1h_vol_ratio = tavan_1h_vol / ta.sma(tavan_1h_vol, 20)
+    if tavan_1h_vol_ratio > 1.3
+        score += 5.0
+    
+    // 5. Momentum Indicators (max 20 points)
+    // RSI oversold recovery
+    curr_rsi = ta.rsi(close, 14)
+    if curr_rsi > 50 and curr_rsi < 70
+        score += 5.0
+    if tavan_1h_rsi > 50 and tavan_1h_rsi < 70
+        score += 5.0
+    if tavan_4h_rsi > 45 and tavan_4h_rsi < 65
+        score += 5.0
+    
+    // Price momentum
+    if close > ta.highest(high, 20)  // New 20-bar high
+        score += 5.0
+    
+    score
+
+// Build TAVAN message
+f_build_tavan_msg(score) =>
+    lines = array.new_string()
+    
+    array.push(lines, "🚀🚀🚀 TAVAN ROKET SİNYALİ 🚀🚀🚀")
+    array.push(lines, "")
+    array.push(lines, "HISSE: " + syminfo.ticker + " | FIYAT: " + fmtMintMsg(close))
+    array.push(lines, "TAVAN SKORU: " + str.tostring(math.round(score, 1)) + "/100")
+    array.push(lines, "")
+    
+    // Show active confirmations
+    array.push(lines, "AKTİF ONAYLAR:")
+    
+    if dipSignalFinal
+        array.push(lines, "✓ PULLBACK DIP AL Sinyali")
+    
+    if ema_buy_signal
+        array.push(lines, "✓ EMA Cross 1H+15m")
+    
+    if ema_15m_quality_pass
+        array.push(lines, "✓ 15m Kalite Filtreleri")
+    
+    // MTF count
+    mtf_count = 0
+    if mtfDipOk1H
+        mtf_count += 1
+    if mtfDipOk2H
+        mtf_count += 1
+    if mtfDipOk4H
+        mtf_count += 1
+    if mtfDipOk1D
+        mtf_count += 1
+    
+    if mtf_count > 0
+        array.push(lines, "✓ MTF DIP Onayı (" + str.tostring(mtf_count) + "/4 TF)")
+    
+    // Volume
+    vol_ratio = volume / ta.sma(volume, 20)
+    if vol_ratio > 1.2
+        array.push(lines, "✓ Yüksek Hacim (×" + str.tostring(math.round(vol_ratio, 2)) + ")")
+    
+    // Momentum
+    curr_rsi = ta.rsi(close, 14)
+    array.push(lines, "✓ RSI(14): " + str.tostring(math.round(curr_rsi, 1)))
+    
+    if close > ta.highest(high, 20)
+        array.push(lines, "✓ Yeni 20-Bar Yüksek")
+    
+    array.push(lines, "")
+    array.push(lines, "⚠️ HEDEF: 1-2 günde TAVAN potansiyeli")
+    array.push(lines, "⚠️ STOP: ATR bazlı (" + fmtMintMsg(close - atr*0.8) + ")")
+    
+    // Add ATR target
+    target_price = close + (atr * 2.0)
+    array.push(lines, "🎯 İLK HEDEF: " + fmtMintMsg(target_price) + " (+" + str.tostring(math.round((target_price/close - 1) * 100, 1)) + "%)")
+    
+    f_lineJoin(lines)
+
+// TAVAN cooldown check
+tavan_cooldown_ok = na(tavan_lastSignalTime) or ((time - tavan_lastSignalTime) >= (tavan_cooldown_hours * 3600000))
+
+// Calculate score
+tavan_score = tavan_enable ? f_calculate_tavan_score() : 0.0
+
+// TAVAN signal condition
+tavan_signal = tavan_enable and tavan_score >= tavan_min_score and tavan_cooldown_ok
+
+// Send TAVAN alert
+if tavan_signal
+    tavan_msg = f_build_tavan_msg(tavan_score)
+    send_msg(tavan_chat_id, tavan_msg)
+    tavan_lastSignalTime := time
+    
+    if tavan_show_labels
+        label.new(bar_index, low, "🚀\nTAVAN\n" + str.tostring(math.round(tavan_score, 0)), 
+            style=label.style_label_up, 
+            color=color.new(color.orange, 0), 
+            textcolor=color.white, 
+            size=size.normal,
+            tooltip="TAVAN Skoru: " + str.tostring(math.round(tavan_score, 1)) + "/100")
+
+// Alert condition
+alertcondition(tavan_signal, title="🚀 TAVAN ROKET", message="TAVAN ROKET SİNYALİ!")
+
