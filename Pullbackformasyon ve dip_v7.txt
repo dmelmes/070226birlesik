@@ -5,7 +5,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // ===================== PULLBACK + FORMASYONLAR + İYİLEŞTİRMELER ============
 ////////////////////////////////////////////////////////////////////////////////
-indicator("MGPULL+ Formasyon + ", "B+E2+DIP", overlay=true, max_labels_count=500, max_lines_count=500)
+indicator("PULLV7+ Formasyon + ", "V7-+E2+DIP", overlay=true, max_labels_count=500, max_lines_count=500)
 
 // ===================== INPUTLAR =====================
 grpCore="Çekirdek"
@@ -146,8 +146,8 @@ ema_fast=input.int(5,"EMA Fast (Hızlı)",minval=1,group=grpEMA)
 ema_slow=input.int(137,"EMA Slow (Yavaş)",minval=1,group=grpEMA)
 ema_enable_buy=input.bool(true,"BUY Sinyalleri Aktif",group=grpEMA)
 ema_enable_sell=input.bool(false,"SELL Sinyalleri Aktif",group=grpEMA,tooltip="Varsayılan: Kapalı. Açıldığında SELL sinyalleri gönderilir.")
-ema_buy_chat_id=input.string("-1002781417418","EMA BUY chat_id",group=grpEMA)
-ema_sell_chat_id=input.string("-1002587291984","EMA SELL chat_id",group=grpEMA)
+ema_buy_chat_id=input.string("-1002672108862","EMA BUY chat_id",group=grpEMA)
+ema_sell_chat_id=input.string("-4779006728","EMA SELL chat_id",group=grpEMA)
 ema_cooldown_min=input.int(60,"EMA Cooldown (dk)",minval=0,group=grpEMA)
 ema_show_labels=input.bool(true,"EMA Label Göster",group=grpEMA)
 
