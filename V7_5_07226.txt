@@ -2029,39 +2029,80 @@ if canSendUnified
 if allowLInt_Confirmed
     // Enhanced analytics for BANKO AL
     _banko_volAvg = ta.sma(volume, 20)
-    _banko_volRatio = volume / _banko_volAvg
+    _banko_volRatio = na(_banko_volAvg) or na(volume) ? na : volume / _banko_volAvg
     _banko_rsi = ta.rsi(close, 14)
     _banko_atr = ta.atr(14)
-    _banko_atrPct = (_banko_atr / close) * 100
+    _banko_atrPct = na(_banko_atr) or na(close) ? na : (_banko_atr / close) * 100
     
-    // Determine strength grade
+    // Format Volume with percentage and category
+    _banko_volText = ""
+    if na(_banko_volRatio)
+        _banko_volText := "Veri yok"
+    else
+        _banko_volPct = ((_banko_volRatio - 1.0) * 100)
+        _banko_volPctStr = (_banko_volPct >= 0 ? "+" : "") + str.tostring(_banko_volPct, "#") + "%"
+        if _banko_volRatio > 1.5
+            _banko_volText := "GÜÇLÜ (" + _banko_volPctStr + ") ✅"
+        else if _banko_volRatio > 1.0
+            _banko_volText := "VAR (" + _banko_volPctStr + ") ✅"
+        else if _banko_volRatio > 0.8
+            _banko_volText := "ORTA (" + _banko_volPctStr + ") ⚠️"
+        else
+            _banko_volText := "ZAYIF (" + _banko_volPctStr + ") ❌"
+    
+    // Format Momentum with category
+    _banko_momText = ""
+    if na(_banko_rsi)
+        _banko_momText := "Hesaplanıyor"
+    else
+        _banko_rsiTrend = _banko_rsi > _banko_rsi[1] ? "↑" : _banko_rsi < _banko_rsi[1] ? "↓" : "→"
+        _banko_rsiStr = "RSI " + str.tostring(_banko_rsi, "#") + " " + _banko_rsiTrend
+        if _banko_rsi > 60
+            _banko_momText := "GÜÇLÜ (" + _banko_rsiStr + ") ✅"
+        else if _banko_rsi > 50
+            _banko_momText := "ORTA (" + _banko_rsiStr + ") ⚠️"
+        else
+            _banko_momText := "ZAYIF (" + _banko_rsiStr + ") ❌"
+    
+    // Format Volatility with description
+    _banko_volText2 = ""
+    if na(_banko_atrPct)
+        _banko_volText2 := "Hesaplanıyor"
+    else
+        if _banko_atrPct > 4.0
+            _banko_volText2 := "YÜKSEK ⚡"
+        else if _banko_atrPct > 2.0
+            _banko_volText2 := "ORTA 📊"
+        else
+            _banko_volText2 := "DÜŞÜK 😴"
+    
+    // Calculate strength grade
     _banko_score = 0
-    if _banko_volRatio > 2.0
-        _banko_score += 3
-    else if _banko_volRatio > 1.5
-        _banko_score += 2
-    else if _banko_volRatio > 1.2
+    if not na(_banko_volRatio)
+        if _banko_volRatio > 2.0
+            _banko_score += 3
+        else if _banko_volRatio > 1.5
+            _banko_score += 2
+        else if _banko_volRatio > 1.2
+            _banko_score += 1
+    
+    if not na(_banko_rsi)
+        if _banko_rsi > 60
+            _banko_score += 2
+        else if _banko_rsi > 55
+            _banko_score += 1
+    
+    if not na(_banko_atrPct) and _banko_atrPct > 3.0
         _banko_score += 1
     
-    if _banko_rsi > 60
-        _banko_score += 2
-    else if _banko_rsi > 55
-        _banko_score += 1
-    
-    if _banko_atrPct > 3.0
-        _banko_score += 1
-    
-    _banko_grade = _banko_score >= 5 ? "A (Güçlü)" : _banko_score >= 3 ? "B (İyi)" : "C (Orta)"
-    _banko_rsiTrend = _banko_rsi > _banko_rsi[1] ? "↑" : _banko_rsi < _banko_rsi[1] ? "↓" : "→"
-    _banko_volStatus = _banko_volRatio > 1.5 ? "✅" : _banko_volRatio > 1.0 ? "⚠️" : "❌"
-    _banko_momStatus = _banko_rsi > 55 ? "✅" : "⚠️"
+    _banko_grade = _banko_score >= 5 ? "A+ ⭐⭐⭐" : _banko_score >= 3 ? "B ⭐⭐" : "C ⭐"
     
     // Build enhanced message
     _bankoConfMsg = "✓ BANKO KESİŞME AL [CONFIRMED]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n\n" +
          "📊 Analiz:\n" +
-         "Hacim: " + str.tostring(_banko_volRatio, "#.#") + "x ortalama " + _banko_volStatus + "\n" +
-         "Momentum: RSI " + str.tostring(_banko_rsi, "#.#") + " " + _banko_rsiTrend + " " + _banko_momStatus + "\n" +
-         "Volatilite: ATR " + str.tostring(_banko_atrPct, "#.##") + "%\n" +
+         "Hacim: " + _banko_volText + "\n" +
+         "Momentum: " + _banko_momText + "\n" +
+         "Volatilite: " + _banko_volText2 + "\n" +
          "Güç: " + _banko_grade + "\n\n" +
          "✅ Kesin sinyal - Bar kapatıldı" + f_prev_bullish_note()
     _bankoConfId = "BANKO_CONFIRMED_" + str.tostring(time)
@@ -2145,32 +2186,74 @@ sendMtf(tf, tfLabel, useTf)=>
                 prevNoteMtf = f_prev_bullish_note()
                 
                 // Calculate analytics for MTF BANKO AL (using chart TF data for context)
-                _mtf_volRatio = volume / ta.sma(volume, 20)  // Chart TF volume
-                _mtf_rsi = ta.rsi(close, 14)  // Chart TF RSI
-                _mtf_atr = ta.atr(14)  // Chart TF ATR
-                _mtf_atrPct = (_mtf_atr / mtfClose) * 100  // ATR % of MTF price
+                _mtf_volAvg = ta.sma(volume, 20)
+                _mtf_volRatio = na(_mtf_volAvg) or na(volume) ? na : volume / _mtf_volAvg
+                _mtf_rsi = ta.rsi(close, 14)
+                _mtf_atr = ta.atr(14)
+                _mtf_atrPct = na(_mtf_atr) or na(mtfClose) ? na : (_mtf_atr / mtfClose) * 100
                 
-                // Scoring system for strength grade
+                // Format Volume with percentage and category
+                _mtf_volText = ""
+                if na(_mtf_volRatio)
+                    _mtf_volText := "Veri yok"
+                else
+                    _mtf_volPct = ((_mtf_volRatio - 1.0) * 100)
+                    _mtf_volPctStr = (_mtf_volPct >= 0 ? "+" : "") + str.tostring(_mtf_volPct, "#") + "%"
+                    if _mtf_volRatio > 1.5
+                        _mtf_volText := "GÜÇLÜ (" + _mtf_volPctStr + ") ✅"
+                    else if _mtf_volRatio > 1.0
+                        _mtf_volText := "VAR (" + _mtf_volPctStr + ") ✅"
+                    else if _mtf_volRatio > 0.8
+                        _mtf_volText := "ORTA (" + _mtf_volPctStr + ") ⚠️"
+                    else
+                        _mtf_volText := "ZAYIF (" + _mtf_volPctStr + ") ❌"
+                
+                // Format Momentum with category
+                _mtf_momText = ""
+                if na(_mtf_rsi)
+                    _mtf_momText := "Hesaplanıyor"
+                else
+                    _mtf_rsiTrend = _mtf_rsi > _mtf_rsi[1] ? "↑" : _mtf_rsi < _mtf_rsi[1] ? "↓" : "→"
+                    _mtf_rsiStr = "RSI " + str.tostring(_mtf_rsi, "#") + " " + _mtf_rsiTrend
+                    if _mtf_rsi > 60
+                        _mtf_momText := "GÜÇLÜ (" + _mtf_rsiStr + ") ✅"
+                    else if _mtf_rsi > 50
+                        _mtf_momText := "ORTA (" + _mtf_rsiStr + ") ⚠️"
+                    else
+                        _mtf_momText := "ZAYIF (" + _mtf_rsiStr + ") ❌"
+                
+                // Format Volatility with description
+                _mtf_volText2 = ""
+                if na(_mtf_atrPct)
+                    _mtf_volText2 := "Hesaplanıyor"
+                else
+                    if _mtf_atrPct > 4.0
+                        _mtf_volText2 := "YÜKSEK ⚡"
+                    else if _mtf_atrPct > 2.0
+                        _mtf_volText2 := "ORTA 📊"
+                    else
+                        _mtf_volText2 := "DÜŞÜK 😴"
+                
+                // Calculate strength grade
                 _mtf_score = 0
-                if _mtf_volRatio > 2.0
-                    _mtf_score += 3
-                else if _mtf_volRatio > 1.5
-                    _mtf_score += 2
-                else if _mtf_volRatio > 1.2
+                if not na(_mtf_volRatio)
+                    if _mtf_volRatio > 2.0
+                        _mtf_score += 3
+                    else if _mtf_volRatio > 1.5
+                        _mtf_score += 2
+                    else if _mtf_volRatio > 1.2
+                        _mtf_score += 1
+                
+                if not na(_mtf_rsi)
+                    if _mtf_rsi > 60
+                        _mtf_score += 2
+                    else if _mtf_rsi > 55
+                        _mtf_score += 1
+                
+                if not na(_mtf_atrPct) and _mtf_atrPct > 3.0
                     _mtf_score += 1
                 
-                if _mtf_rsi > 60
-                    _mtf_score += 2
-                else if _mtf_rsi > 55
-                    _mtf_score += 1
-                
-                if _mtf_atrPct > 3.0
-                    _mtf_score += 1
-                
-                _mtf_grade = _mtf_score >= 5 ? "A (Güçlü)" : _mtf_score >= 3 ? "B (İyi)" : "C (Orta)"
-                _mtf_rsiTrend = _mtf_rsi > _mtf_rsi[1] ? "↑" : _mtf_rsi < _mtf_rsi[1] ? "↓" : "→"
-                _mtf_volStatus = _mtf_volRatio > 1.5 ? "✅" : _mtf_volRatio > 1.0 ? "⚠️" : "❌"
-                _mtf_momStatus = _mtf_rsi > 55 ? "✅" : "⚠️"
+                _mtf_grade = _mtf_score >= 5 ? "A+ ⭐⭐⭐" : _mtf_score >= 3 ? "B ⭐⭐" : "C ⭐"
                 
                 // Add REALTIME/CONFIRMED label based on tfClosed status
                 statusLabel = tfClosed ? " [✓CONFIRMED]" : " [⚡REALTIME]"
@@ -2178,9 +2261,9 @@ sendMtf(tf, tfLabel, useTf)=>
                 // Build enhanced message with analytics
                 msg = evStrBuy + " (" + tfLabel + ")" + statusLabel + "\n[" + syminfo.ticker + "]\nFiyat: " + fmtMint(mtfClose) + 
                       "\n\n📊 Analiz:\n" +
-                      "Hacim: " + str.tostring(_mtf_volRatio, "#.#") + "x ortalama " + _mtf_volStatus + "\n" +
-                      "Momentum: RSI " + str.tostring(_mtf_rsi, "#.#") + " " + _mtf_rsiTrend + " " + _mtf_momStatus + "\n" +
-                      "Volatilite: ATR " + str.tostring(_mtf_atrPct, "#.##") + "%\n" +
+                      "Hacim: " + _mtf_volText + "\n" +
+                      "Momentum: " + _mtf_momText + "\n" +
+                      "Volatilite: " + _mtf_volText2 + "\n" +
                       "Güç: " + _mtf_grade +
                       (tfClosed ? "\n\n✅ Kesin sinyal - Bar kapatıldı" : "") +
                       prevNoteMtf
