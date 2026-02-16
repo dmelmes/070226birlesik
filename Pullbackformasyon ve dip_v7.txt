@@ -3408,9 +3408,9 @@ f_build_tavan_msg(score) =>
     
     array.push(lines, "")
     array.push(lines, "⚠️ HEDEF: 1-2 günde TAVAN potansiyeli")
-    array.push(lines, "⚠️ STOP: ATR bazlı (" + fmtMintMsg(close - atr*0.8) + ")")
+    array.push(lines, "⚠️ STOP: ATR bazlı (" + fmtMintMsg(close - atrValue*0.8) + ")")
     
-    target_price = close + (atr * 2.0)
+    target_price = close + (atrValue * 2.0)
     array.push(lines, "🎯 İLK HEDEF: " + fmtMintMsg(target_price) + " (+" + str.tostring(math.round((target_price/close - 1) * 100, 1)) + "%)")
     
     f_lineJoin(lines)
