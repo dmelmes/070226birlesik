@@ -2144,11 +2144,11 @@ sendMtf(tf, tfLabel, useTf)=>
                 id = "MTF_BANKO_AL_"+tfLabel+"_"+str.tostring(mtfTime)
                 prevNoteMtf = f_prev_bullish_note()
                 
-                // Calculate analytics for MTF BANKO AL
-                _mtf_volRatio = mtfVolume / ta.sma(mtfVolume, 20)
-                _mtf_rsi = ta.rsi(mtfClose, 14)
-                _mtf_atr = ta.atr(14)
-                _mtf_atrPct = (_mtf_atr / mtfClose) * 100
+                // Calculate analytics for MTF BANKO AL (using chart TF data for context)
+                _mtf_volRatio = volume / ta.sma(volume, 20)  // Chart TF volume
+                _mtf_rsi = ta.rsi(close, 14)  // Chart TF RSI
+                _mtf_atr = ta.atr(14)  // Chart TF ATR
+                _mtf_atrPct = (_mtf_atr / mtfClose) * 100  // ATR % of MTF price
                 
                 // Scoring system for strength grade
                 _mtf_score = 0
