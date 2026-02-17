@@ -152,12 +152,13 @@ ema_cooldown_min=input.int(60,"EMA Cooldown (dk)",minval=0,group=grpEMA)
 ema_show_labels=input.bool(true,"EMA Label Göster",group=grpEMA)
 // Quality filters for stronger signals
 ema_use_quality_filters=input.bool(true,"Kalite Filtrelerini Kullan (Önerilen)",group=grpEMA,tooltip="15m için ekstra filtreler: EMA20, RSI, Volume, Breakout, Trend")
+ema_min_filters=input.int(4,"Minimum Filtre Sayısı (4/6 Önerilen)",minval=1,maxval=6,group=grpEMA,tooltip="6 filtreden en az kaç tanesi geçmeli? 4 = dengeli, 6 = çok katı")
 
 // ===================== TAVAN MODULE (Best of All Modules) =====================
 grpTAVAN="🚀 TAVAN • Roket Modülü (1-2 Gün)"
 tavan_enable=input.bool(true,"TAVAN Modülü Aktif",group=grpTAVAN,tooltip="Tüm modüllerden en güçlü sinyalleri birleştirir. 1-2 güne TAVAN yapabilecek hisseler.")
 tavan_chat_id=input.string("-1002672108862","TAVAN chat_id",group=grpTAVAN)
-tavan_min_score=input.int(75,"Minimum TAVAN Skoru (0-100)",minval=0,maxval=100,group=grpTAVAN,tooltip="Ne kadar yüksekse o kadar seçici. 75+ önerilir.")
+tavan_min_score=input.int(70,"Minimum TAVAN Skoru (0-100)",minval=0,maxval=100,group=grpTAVAN,tooltip="Ne kadar yüksekse o kadar seçici. 70-75 dengeli, 75+ çok seçici")
 tavan_show_labels=input.bool(true,"TAVAN Label Göster",group=grpTAVAN)
 tavan_cooldown_hours=input.int(24,"TAVAN Cooldown (saat)",minval=1,group=grpTAVAN,tooltip="Aynı hisse için minimum bekleme süresi")
 
@@ -1860,16 +1861,23 @@ ema_1h_cross_down = is1hClose and ema1h_fast < ema1h_slow and ema1h_fast_prev >=
 ema_15m_state_bullish = ema15m_fast > ema15m_slow
 ema_15m_state_bearish = ema15m_fast < ema15m_slow
 
-// 15m quality filters (strengthened)
+// 15m quality filters (flexible scoring)
 ema_15m_quality_pass = true
 if ema_use_quality_filters
-    ema_15m_quality_pass := 
-        ema15m_fast > ema15m_slow and           // EMA5 > EMA137
-        ema15m_close > ema15m_ema20 and         // close > EMA20
-        ema15m_rsi > 52 and                     // RSI > 52
-        ema15m_close > ema15m_highest10 and     // close > highest(high, 10) - breakout
-        ema15m_vol > ema15m_vol_sma and         // volume > sma(volume, 10)
-        ema15m_slow > ema15m_slow_5ago          // EMA137 > EMA137[5] - uptrend
+    filter_count = 0
+    if ema15m_fast > ema15m_slow
+        filter_count += 1
+    if ema15m_close > ema15m_ema20
+        filter_count += 1
+    if ema15m_rsi > 50
+        filter_count += 1
+    if ema15m_close > ema15m_highest10
+        filter_count += 1
+    if ema15m_vol > ema15m_vol_sma
+        filter_count += 1
+    if ema15m_slow > ema15m_slow_5ago
+        filter_count += 1
+    ema_15m_quality_pass := filter_count >= ema_min_filters
 
 // Cooldown check
 ema_cooldown_ok_buy = na(ema_lastBuyTime) or ((time - ema_lastBuyTime) >= (ema_cooldown_min * 60000))
