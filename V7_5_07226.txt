@@ -453,12 +453,6 @@ fChatId(isBuyEvent, isSellEvent) =>
     _sell = telegramChatIdSell != "" ? telegramChatIdSell : _def
     isBuyEvent ? _buy : isSellEvent ? _sell : _def
 
-    if _ok and daily_once
-        _ok := dayRef != currDayStr
-    if _ok and cooldown_minutes > 0
-        _ok := na(tRef) or (nowTime - tRef > cooldown_minutes * 60 * 1000)
-    _ok
-
 // Önceki gün notu (Berlin 09:00)
 f_is_leap(y) => (y % 4 == 0 and y % 100 != 0) or (y % 400 == 0)
 f_dim(y, m) =>
