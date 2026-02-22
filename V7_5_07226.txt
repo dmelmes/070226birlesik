@@ -1878,6 +1878,8 @@ if eff_includeModule2
         techTR = "\nTEK\n" + techCtxM2
         techEN = "\nTECH\n" + techCtxM2
         prevNoteM2 = f_prev_bullish_note()
+        bodyTR = "\nFiyat: " + fmtMint(close) + tgTR + techTR + valTR + prevNoteM2
+        bodyEN = "\nPrice: " + fmtMint(close) + tgEN + techEN + valEN + prevNoteM2
         msgB = (etiketDil=="TR" ? hdrTR + bodyTR : hdrEN + bodyEN)
         send_event(idB, msgB, fChatId(true,false), alert.freq_once_per_bar_close)
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("M2 Kombine AL", "M2 Combined BUY", "4H")
@@ -1892,6 +1894,8 @@ if eff_includeModule2
         techTR2 = "\nTEK\n" + techCtxM2b
         techEN2 = "\nTECH\n" + techCtxM2b
         prevNoteM2b = f_prev_bullish_note()
+        bodyTR2 = "\nFiyat: " + fmtMint(close) + tgTR2 + techTR2 + valTR2 + prevNoteM2b
+        bodyEN2 = "\nPrice: " + fmtMint(close) + tgEN2 + techEN2 + valEN2 + prevNoteM2b
         msgB2 = (etiketDil=="TR" ? hdrTR2 + bodyTR2 : hdrEN2 + bodyEN2)
         send_event(idB2, msgB2, fChatId(true,false), alert.freq_once_per_bar_close)
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("M2 Onaylı AL", "M2 Confirmed BUY", "4H")
@@ -1906,6 +1910,8 @@ if eff_includeModule2
         techTR3 = "\nTEK\n" + techCtxM2c
         techEN3 = "\nTECH\n" + techCtxM2c
         prevNoteM2c = f_prev_bullish_note()
+        bodyTR3 = "\nFiyat: " + fmtMint(close) + tgTR3 + techTR3 + valTR3 + prevNoteM2c
+        bodyEN3 = "\nPrice: " + fmtMint(close) + tgEN3 + techEN3 + valEN3 + prevNoteM2c
         msgBC = (etiketDil=="TR" ? hdrTR3 + bodyTR3 : hdrEN3 + bodyEN3)
         send_event(idBC, msgBC, fChatId(true,false), alert.freq_once_per_bar_close)
 
@@ -1924,6 +1930,9 @@ if mt_sendCombinedAlerts and mt_sellAllowedCombined
     techCtxM2s = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs = "\nTEK:" + techCtxM2s
     techENs = "\nTECH:" + techCtxM2s
+    prevNoteM2s = f_prev_bearish_note()
+    bodyTRs = "\nFiyat: " + fmtMint(close) + tgTRs + techTRs + valTRs + prevNoteM2s
+    bodyENs = "\nPrice: " + fmtMint(close) + tgENs + techENs + valENs + prevNoteM2s
     msgS = (etiketDil=="TR" ? hdrTRs + bodyTRs : hdrENs + bodyENs)
     send_event(idS, msgS, fChatId(false,true), alert.freq_once_per_bar_close)
 
@@ -1936,6 +1945,9 @@ if mt_sendConfirmedAlerts and mt_sellAllowedConf and not mt_sellAllowedCombined
     techCtxM2s2 = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs2 = "\nTEK:" + techCtxM2s2
     techENs2 = "\nTECH:" + techCtxM2s2
+    prevNoteM2s2 = f_prev_bearish_note()
+    bodyTRs2 = "\nFiyat: " + fmtMint(close) + tgTRs2 + techTRs2 + valTRs2 + prevNoteM2s2
+    bodyENs2 = "\nPrice: " + fmtMint(close) + tgENs2 + techENs2 + valENs2 + prevNoteM2s2
     msgS2 = (etiketDil=="TR" ? hdrTRs2 + bodyTRs2 : hdrENs2 + bodyENs2)
     send_event(idS2, msgS2, fChatId(false,true), alert.freq_once_per_bar_close)
 
@@ -1950,6 +1962,8 @@ if eff_includeModule2
         techTRd = "\nTEK:" + techCtxD
         techENd = "\nTECH:" + techCtxD
         prevNoteD = f_prev_bullish_note()
+        bodyTRd = "\nFiyat: " + fmtMint(close) + tgTRd + techTRd + valTRd + prevNoteD
+        bodyENd = "\nPrice: " + fmtMint(close) + tgENd + techENd + valENd + prevNoteD
         msgBD = (etiketDil=="TR" ? hdrTRd + bodyTRd : hdrENd + bodyENd)
         send_event(idBD, msgBD, fChatId(true,false), alert.freq_once_per_bar_close)
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("M2 Kombine AL", "M2 Combined BUY", "1D")
@@ -1964,6 +1978,8 @@ if eff_includeModule2
         techTR2d = "\n--- TEK ---\n" + techCtxM2bd
         techEN2d = "\n--- TECH ---\n" + techCtxM2bd
         prevNoteM2bd = f_prev_bullish_note()
+        bodyTR2d = "\nFiyat: " + fmtMint(close) + tgTR2d + techTR2d + valTR2d + prevNoteM2bd
+        bodyEN2d = "\nPrice: " + fmtMint(close) + tgEN2d + techEN2d + valEN2d + prevNoteM2bd
         msgB2D = (etiketDil=="TR" ? hdrTR2d + bodyTR2d : hdrEN2d + bodyEN2d)
         send_event(idB2D, msgB2D, fChatId(true,false), alert.freq_once_per_bar_close)
 
@@ -1977,6 +1993,8 @@ if eff_includeModule2
         techTR3d = "\n--- TEK ---\n" + techCtxM2cd
         techEN3d = "\n--- TECH ---\n" + techCtxM2cd
         prevNoteM2cd = f_prev_bullish_note()
+        bodyTR3d = "\nFiyat: " + fmtMint(close) + tgTR3d + techTR3d + valTR3d + prevNoteM2cd
+        bodyEN3d = "\nPrice: " + fmtMint(close) + tgEN3d + techEN3d + valEN3d + prevNoteM2cd
         msgBCD = (etiketDil=="TR" ? hdrTR3d + bodyTR3d : hdrEN3d + bodyEN3d)
         send_event(idBCD, msgBCD, fChatId(true,false), alert.freq_once_per_bar_close)
 
@@ -1989,6 +2007,9 @@ if mt_sendCombinedAlerts and mt_sellAllowedCombined1D
     techCtxM2sd = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRsd = "\nTEK:" + techCtxM2sd
     techENsd = "\nTECH:" + techCtxM2sd
+    prevNoteM2sd = f_prev_bearish_note()
+    bodyTRsd = "\nFiyat: " + fmtMint(close) + tgTRsd + techTRsd + valTRsd + prevNoteM2sd
+    bodyENsd = "\nPrice: " + fmtMint(close) + tgENsd + techENsd + valENsd + prevNoteM2sd
     msgSD = (etiketDil=="TR" ? hdrTRsd + bodyTRsd : hdrENsd + bodyENsd)
     send_event(idSD, msgSD, fChatId(false,true), alert.freq_once_per_bar_close)
 
@@ -2001,6 +2022,9 @@ if mt_sendConfirmedAlerts and mt_sellAllowedConf1D and not mt_sellAllowedCombine
     techCtxM2s2d = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs2d = "\nTEK:" + techCtxM2s2d
     techENs2d = "\nTECH:" + techCtxM2s2d
+    prevNoteM2s2d = f_prev_bearish_note()
+    bodyTRs2d = "\nFiyat: " + fmtMint(close) + tgTRs2d + techTRs2d + valTRs2d + prevNoteM2s2d
+    bodyENs2d = "\nPrice: " + fmtMint(close) + tgENs2d + techENs2d + valENs2d + prevNoteM2s2d
     msgS2D = (etiketDil=="TR" ? hdrTRs2d + bodyTRs2d : hdrENs2d + bodyENs2d)
     send_event(idS2D, msgS2D, fChatId(false,true), alert.freq_once_per_bar_close)
 
