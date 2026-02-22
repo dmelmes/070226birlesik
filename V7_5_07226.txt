@@ -1,5 +1,5 @@
 //@version=5
-indicator(title="V7-6", shorttitle="V7-6",  overlay=true,  max_labels_count=500, max_lines_count=500, max_boxes_count=200,
+indicator(title="V7-12", shorttitle="V7-12",  overlay=true,  max_labels_count=500, max_lines_count=500, max_boxes_count=200,
      dynamic_requests=true)
 
 // ---
@@ -2485,8 +2485,7 @@ alpha_allowHistoricalAlerts = input.bool(false, "AT Allow Historical Alerts", gr
 // =========================================================================
 //           samples, wins, winRate, lastOutcome]
 // =========================================================================
-f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, 
-            histMinSamples, histWinRateMin, histMaxSamples, gateWhenInsufficient) =>
+f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, histMinSamples, histWinRateMin, histMaxSamples, gateWhenInsufficient) =>
     
     // ===== 1. Calculate AlphaTrend Signal (same as before) =====
     _ATR = ta.sma(ta.tr, AP)
@@ -2585,9 +2584,7 @@ if enableAlphaPerf and not safeBoot
     
     // -------------------------
     // -------------------------
-    [at4h_AT, at4h_confBuy, at4h_entry, at4h_time, 
-     at4h_gatePass, at4h_samples, at4h_wins, at4h_winRate, at4h_lastOutcome] = 
-        request.security(syminfo.tickerid, "240", 
+    [at4h_AT, at4h_confBuy, at4h_entry, at4h_time, at4h_gatePass, at4h_samples, at4h_wins, at4h_winRate, at4h_lastOutcome] =   request.security(syminfo.tickerid, "240", 
                          f_at_engine("4H", alpha_coeff, alpha_AP, alpha_novolumedata,
                                      alpha_evalBars_4h, alpha_targetPct,
                                      alpha_histMinSamples, alpha_histWinRateMin,
@@ -2596,9 +2593,7 @@ if enableAlphaPerf and not safeBoot
     
     // -------------------------
     // -------------------------
-    [at1d_AT, at1d_confBuy, at1d_entry, at1d_time,
-     at1d_gatePass, at1d_samples, at1d_wins, at1d_winRate, at1d_lastOutcome] = 
-        request.security(syminfo.tickerid, "D", 
+    [at1d_AT, at1d_confBuy, at1d_entry, at1d_time, at1d_gatePass, at1d_samples, at1d_wins, at1d_winRate, at1d_lastOutcome] = request.security(syminfo.tickerid, "D", 
                          f_at_engine("1D", alpha_coeff, alpha_AP, alpha_novolumedata,
                                      alpha_evalBars_1d, alpha_targetPct,
                                      alpha_histMinSamples, alpha_histWinRateMin,
