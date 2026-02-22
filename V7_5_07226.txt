@@ -445,8 +445,6 @@ fChatId(isBuyEvent, isSellEvent) =>
     _sell = telegramChatIdSell != "" ? telegramChatIdSell : _def
     isBuyEvent ? _buy : isSellEvent ? _sell : _def
 
-          : (pg_chat_sell != "" ? pg_chat_sell : telegramChatIdSell)
-
     if _ok and daily_once
         _ok := dayRef != currDayStr
     if _ok and cooldown_minutes > 0
