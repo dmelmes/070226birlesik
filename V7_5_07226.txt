@@ -2041,40 +2041,13 @@ if allowLInt_Confirmed
     else
         _banko_volPct = ((_banko_volRatio - 1.0) * 100)
         _banko_volPctStr = (_banko_volPct >= 0 ? "+" : "") + str.tostring(_banko_volPct, "#") + "%"
-        if _banko_volRatio > 1.5
-            _banko_volText := "GÜÇLÜ (" + _banko_volPctStr + ") ✅"
-        else if _banko_volRatio > 1.0
-            _banko_volText := "VAR (" + _banko_volPctStr + ") ✅"
-        else if _banko_volRatio > 0.8
-            _banko_volText := "ORTA (" + _banko_volPctStr + ") ⚠️"
-        else
-            _banko_volText := "ZAYIF (" + _banko_volPctStr + ") ❌"
+        _banko_volText := _banko_volRatio > 1.5 ? "GÜÇLÜ (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 1.0 ? "VAR (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 0.8 ? "ORTA (" + _banko_volPctStr + ") ⚠️" : "ZAYIF (" + _banko_volPctStr + ") ❌"
     
-    // Format Momentum with category
-    _banko_momText = ""
-    if na(_banko_rsi)
-        _banko_momText := "Hesaplanıyor"
-    else
-        _banko_rsiTrend = _banko_rsi > _banko_rsi[1] ? "↑" : _banko_rsi < _banko_rsi[1] ? "↓" : "→"
-        _banko_rsiStr = "RSI " + str.tostring(_banko_rsi, "#") + " " + _banko_rsiTrend
-        if _banko_rsi > 60
-            _banko_momText := "GÜÇLÜ (" + _banko_rsiStr + ") ✅"
-        else if _banko_rsi > 50
-            _banko_momText := "ORTA (" + _banko_rsiStr + ") ⚠️"
-        else
-            _banko_momText := "ZAYIF (" + _banko_rsiStr + ") ❌"
+    // Format Momentum
+    _banko_momText = na(_banko_rsi) ? "Hesaplanıyor" : (_banko_rsi > 60 ? "GÜÇLÜ (RSI " + str.tostring(_banko_rsi, "#") + " " + (_banko_rsi > _banko_rsi[1] ? "↑" : "↓") + ") ✅" : _banko_rsi > 50 ? "ORTA (RSI " + str.tostring(_banko_rsi, "#") + " →) ⚠️" : "ZAYIF (RSI " + str.tostring(_banko_rsi, "#") + " ↓) ❌")
     
-    // Format Volatility with description
-    _banko_volText2 = ""
-    if na(_banko_atrPct)
-        _banko_volText2 := "Hesaplanıyor"
-    else
-        if _banko_atrPct > 4.0
-            _banko_volText2 := "YÜKSEK ⚡"
-        else if _banko_atrPct > 2.0
-            _banko_volText2 := "ORTA 📊"
-        else
-            _banko_volText2 := "DÜŞÜK 😴"
+    // Format Volatility
+    _banko_volText2 = na(_banko_atrPct) ? "Hesaplanıyor" : (_banko_atrPct > 4.0 ? "YÜKSEK ⚡" : _banko_atrPct > 2.0 ? "ORTA 📊" : "DÜŞÜK 😴")
     
     // Calculate strength grade
     _banko_score = 0
@@ -2192,47 +2165,9 @@ sendMtf(tf, tfLabel, useTf)=>
                 _mtf_atr = ta.atr(14)
                 _mtf_atrPct = na(_mtf_atr) or na(mtfClose) ? na : (_mtf_atr / mtfClose) * 100
                 
-                // Format Volume with percentage and category
-                _mtf_volText = ""
-                if na(_mtf_volRatio)
-                    _mtf_volText := "Veri yok"
-                else
-                    _mtf_volPct = ((_mtf_volRatio - 1.0) * 100)
-                    _mtf_volPctStr = (_mtf_volPct >= 0 ? "+" : "") + str.tostring(_mtf_volPct, "#") + "%"
-                    if _mtf_volRatio > 1.5
-                        _mtf_volText := "GÜÇLÜ (" + _mtf_volPctStr + ") ✅"
-                    else if _mtf_volRatio > 1.0
-                        _mtf_volText := "VAR (" + _mtf_volPctStr + ") ✅"
-                    else if _mtf_volRatio > 0.8
-                        _mtf_volText := "ORTA (" + _mtf_volPctStr + ") ⚠️"
-                    else
-                        _mtf_volText := "ZAYIF (" + _mtf_volPctStr + ") ❌"
-                
-                // Format Momentum with category
-                _mtf_momText = ""
-                if na(_mtf_rsi)
-                    _mtf_momText := "Hesaplanıyor"
-                else
-                    _mtf_rsiTrend = _mtf_rsi > _mtf_rsi[1] ? "↑" : _mtf_rsi < _mtf_rsi[1] ? "↓" : "→"
-                    _mtf_rsiStr = "RSI " + str.tostring(_mtf_rsi, "#") + " " + _mtf_rsiTrend
-                    if _mtf_rsi > 60
-                        _mtf_momText := "GÜÇLÜ (" + _mtf_rsiStr + ") ✅"
-                    else if _mtf_rsi > 50
-                        _mtf_momText := "ORTA (" + _mtf_rsiStr + ") ⚠️"
-                    else
-                        _mtf_momText := "ZAYIF (" + _mtf_rsiStr + ") ❌"
-                
-                // Format Volatility with description
-                _mtf_volText2 = ""
-                if na(_mtf_atrPct)
-                    _mtf_volText2 := "Hesaplanıyor"
-                else
-                    if _mtf_atrPct > 4.0
-                        _mtf_volText2 := "YÜKSEK ⚡"
-                    else if _mtf_atrPct > 2.0
-                        _mtf_volText2 := "ORTA 📊"
-                    else
-                        _mtf_volText2 := "DÜŞÜK 😴"
+                _mtf_volText = na(_mtf_volRatio) ? "Veri yok" : (_mtf_volRatio > 1.5 ? "GÜÇLÜ (+" + str.tostring((_mtf_volRatio-1)*100, "#") + "%) ✅" : _mtf_volRatio > 1.0 ? "VAR (+" + str.tostring((_mtf_volRatio-1)*100, "#") + "%) ✅" : "ZAYIF (" + str.tostring((_mtf_volRatio-1)*100, "#") + "%) ❌")
+                _mtf_momText = na(_mtf_rsi) ? "Hesaplanıyor" : (_mtf_rsi > 60 ? "GÜÇLÜ (RSI " + str.tostring(_mtf_rsi, "#") + ") ✅" : _mtf_rsi > 50 ? "ORTA (RSI " + str.tostring(_mtf_rsi, "#") + ") ⚠️" : "ZAYIF (RSI " + str.tostring(_mtf_rsi, "#") + ") ❌")
+                _mtf_volText2 = na(_mtf_atrPct) ? "Hesaplanıyor" : (_mtf_atrPct > 4.0 ? "YÜKSEK ⚡" : _mtf_atrPct > 2.0 ? "ORTA 📊" : "DÜŞÜK 😴")
                 
                 // Calculate strength grade
                 _mtf_score = 0
@@ -2506,15 +2441,13 @@ dt_enable           = input.bool(true, "DT Çift/Üçlü Dip AL Aktif", group=gr
 dt_x                = input.int(14, "DT Pivot Uzunluğu", minval=3, group=grpDT)
 dt_tolPct           = input.float(1.0, "DT Tolerans %", step=0.1, minval=0.0, group=grpDT)
 
-// Minimal DT calculation - AL patterns only
+// DT calculation - Double bottom (Çift Dip) only
 var dt_confDB = false
-var dt_confTB = false
 if dt_enable
     dt_atr = ta.atr(14)
-    dt_ph = ta.pivothigh(close, dt_x, dt_x)
     dt_pl = ta.pivotlow(close, dt_x, dt_x)
     
-    // Simple double/triple bottom detection
+    // Double bottom detection
     if not na(dt_pl)
         _lookback = 30
         _bottomCount = 0
@@ -2525,45 +2458,19 @@ if dt_enable
                 if math.abs(_priorLow - _firstBottom) <= (_firstBottom * dt_tolPct / 100.0 + dt_atr)
                     _bottomCount += 1
         
-        dt_confDB := _bottomCount >= 1 and close > _firstBottom  // Double bottom
-        dt_confTB := _bottomCount >= 2 and close > _firstBottom  // Triple bottom
+        dt_confDB := _bottomCount >= 1 and close > _firstBottom
     else
         dt_confDB := false
-        dt_confTB := false
 else
     dt_confDB := false
-    dt_confTB := false
 
-// DT Labels and Telegram Alerts
+// DT Label and Telegram Alert (Çift Dip only)
 if dt_enable and dt_confDB and barstate.isconfirmed
     label.new(bar_index, low, "Çift Dip AL", style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
-    // Send Telegram alert for Çift Dip
-    dt_msg_db = "DT ÇİFT DİP AL|" + syminfo.ticker + "|TF=" + timeframe.period + "|Fiyat=" + str.tostring(close, "#.##")
-    send_event("DT_DB_" + str.tostring(time), dt_msg_db, telegramChatIdBuy, alert.freq_once_per_bar_close)
+    dt_msg = "DT ÇİFT DİP AL|" + syminfo.ticker + "|TF=" + timeframe.period + "|Fiyat=" + str.tostring(close, "#.##")
+    send_event("DT_DB_" + str.tostring(time), dt_msg, telegramChatIdBuy, alert.freq_once_per_bar_close)
 
-if dt_enable and dt_confTB and barstate.isconfirmed
-    label.new(bar_index, low, "Üçlü Dip AL", style=label.style_label_up, color=color.new(color.lime, 0), textcolor=color.white, size=size.small)
-    // Send Telegram alert for Üçlü Dip
-    dt_msg_tb = "DT ÜÇLÜ DİP AL|" + syminfo.ticker + "|TF=" + timeframe.period + "|Fiyat=" + str.tostring(close, "#.##")
-    send_event("DT_TB_" + str.tostring(time), dt_msg_tb, telegramChatIdBuy, alert.freq_once_per_bar_close)
-
-// DT alertconditions (AL only)
 alertcondition(dt_confDB and dt_enable, title="DT Çift Dip AL", message="DT Çift Dip AL onaylandı.")
-alertcondition(dt_confTB and dt_enable, title="DT Üçlü Dip AL", message="DT Üçlü Dip AL onaylandı.")
-// dt_volZLen          = input.int(20, "DT Hacim ZScore Periyodu", minval=2, group=grpDT)
-// dt_volZTh           = input.float(1.0, "DT Hacim ZScore Eşiği", step=0.1, minval=0.0, group=grpDT)
-// dt_volRequireBoth   = input.bool(false, "DT Hem MA*Çarpan hem ZScore gereksin", group=grpDT)
-// useRealtimeBreak = input.bool(true, "DT: Bar kapanışını bekleme (high/low kırılım + realtime)", group=grpDT)
-// dt_showPotential    = input.bool(false, "DT Potansiyel Etiketleri Göster (POT)", group=grpDT)
-// dt_showNeckLines    = input.bool(true, "DT Boyun Çizgisi Göster", group=grpDT)
-// dt_drawNecksOnlyOnConf = input.bool(true, "DT Boyun Çizgisi Yalnızca Onayda Çiz", group=grpDT)
-// dt_limitNeckExtendBars = input.int(80, "DT Boyun Çizgisi Uzatma (bar)", minval=1, group=grpDT)
-// dt_minProfitPct     = input.float(4.0, "DT Minimum Kar Potansiyeli %", step=0.5, minval=0.0, group=grpDT)
-// dt_cBull            = input.color(color.lime, "DT Al (Dip) Rengi", group=grpDT)
-// dt_cBear            = input.color(color.red, "DT Sat (Tepe) Rengi", group=grpDT)
-// dt_cNeck            = input.color(color.orange, "DT Boyun Çizgi Rengi", group=grpDT)
-// dt_confirmationCooldown = input.int(6, "DT Onay Sonrası Bekleme (bar)", minval=0, group=grpDT)
-// dt_minRRtoShow          = input.float(1.2, "DT Gösterim için Min RR", step=0.1, group=grpDT)
 
 // ---
 // FO — Forecast Oscillator BUY-only Alert Module
@@ -2755,32 +2662,16 @@ if hafta_enable
     // Signal confirmed on bar close
     hafta_signal := hafta_allFilters and barstate.isconfirmed
     
-    // Send alert
     if hafta_signal
         hafta_lastBar := bar_index
-        
         hafta_stop = hafta_c * (1 - hafta_slPct / 100)
         hafta_tp1 = hafta_c * (1 + hafta_tp1Pct / 100)
         hafta_tp2 = hafta_c * (1 + hafta_tp2Pct / 100)
-        
         hafta_pathStatus = hafta_isBreakout ? "BREAKOUT" : (hafta_hasResist ? "RESIST @" + str.tostring(hafta_resistLevel, "#.##") : "CLEAR PATH")
         hafta_tfLabel = hafta_timeframe == "W" ? "HAFTALIK" : hafta_timeframe == "M" ? "AYLIK" : "2HAFTA"
-        
-        hafta_msg = "🚀 " + hafta_tfLabel + " AL|" + syminfo.ticker + 
-                    "|E=" + str.tostring(hafta_c, "#.##") + 
-                    "|SL=" + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)" +
-                    "|TP1=" + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)" +
-                    "|TP2=" + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)" +
-                    "|RSI=" + str.tostring(hafta_rsi, "#") +
-                    "|" + hafta_pathStatus +
-                    "|VOL=" + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x"
-        
+        hafta_msg = "🚀 " + hafta_tfLabel + " AL|" + syminfo.ticker + "|E=" + str.tostring(hafta_c, "#.##") + "|SL=" + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)|TP1=" + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)|TP2=" + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)|RSI=" + str.tostring(hafta_rsi, "#") + "|" + hafta_pathStatus + "|VOL=" + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x"
         hafta_chatId = hafta_chat_id == "" ? telegramChatIdBuy : hafta_chat_id
-        hafta_eventId = "HAFTA_BUY_" + str.tostring(hafta_t)
-        
-        send_event(hafta_eventId, hafta_msg, hafta_chatId, alert.freq_once_per_bar_close)
-        
-        // Label on chart
+        send_event("HAFTA_BUY_" + str.tostring(hafta_t), hafta_msg, hafta_chatId, alert.freq_once_per_bar_close)
         label.new(bar_index, low, hafta_tfLabel + " AL", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.normal)
 else
     hafta_signal := false
