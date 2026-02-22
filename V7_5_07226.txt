@@ -1586,6 +1586,10 @@ hc_m2_ok =
 
 // Kesişim ve tüm kapılar
 
+// PG High Confidence gates (PG removed, always allow unified alerts)
+hc_long_gate = true   // Was: pg_hc_long_ok (PG module removed)
+hc_short_gate = true  // Was: pg_hc_short_ok (PG module removed)
+
 // Unified mesajın izni
 canSendUnified = enableUnifiedAlert and (events != "") and (not masterEnable or hc_long_gate or hc_short_gate)
 
