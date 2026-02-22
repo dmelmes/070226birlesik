@@ -246,14 +246,6 @@ prevSessionMinute = input.int(0, "Seans açılışı dakika", minval=0, maxval=5
 // SQZ (LazyBear)
 grpSQZ = "SQZ (LazyBear)"
 //sqz_enable        = input.bool(false, "SQZ Modülü Aktif", group=grpSQZ)
-// PG constants (for SQZ compatibility after PG removal)
-pg_adx_len = 14
-pg_trend_len = 50
-pg_va_mode = "VWAP"  // Simplified after PG removal
-pg_vwap_source = hlc3
-pg_bb_src = close
-pg_bb_length = 20
-pg_bb_mult = 2.0
 //sqz_mode          = input.string("Off", "Kullanım Modu", options=["Off","Filter","Signal"], group=grpSQZ)
 //sqz_filter_mode   = input.string("Strict", "Filter Sıkılığı", options=["Strict","Soft"], group=grpSQZ)
 sqz_enable        = input.bool(true, "SQZ Modülü Aktif", group=grpSQZ)
@@ -1591,6 +1583,8 @@ hc_m2_ok =
 
 
 // Kesişim ve tüm kapılar
+pg_hc_long_ok  = true  // PG removed
+pg_hc_short_ok = true  // PG removed
 
 // Unified mesajın izni
 canSendUnified = enableUnifiedAlert and (events != "") and (not masterEnable or hc_long_gate or hc_short_gate)
@@ -1862,12 +1856,17 @@ sendMtf("D","1D", mtf_use_1d)
 // ---
 // ---
 build_pg_value_lines() =>
-    // Simplified after PG removal - just returns VWAP info
-    float vwap_val = nz(ta.vwap(hlc3))
-    string valueLine_tr = "\nVWAP: " + str.tostring(vwap_val, "#.##")
-    string valueLine_en = "\nVWAP: " + str.tostring(vwap_val, "#.##")
+    string valueLine_tr = ""
+    string valueLine_en = ""
+    if pg_va_mode=="MA+Bollinger"
+        valueLine_tr := "\nBB: " + (close > (ta.sma(pg_bb_src, pg_bb_length) + pg_bb_mult*ta.stdev(pg_bb_src, pg_bb_length)) ? "ÜST" : (close < (ta.sma(pg_bb_src, pg_bb_length) - pg_bb_mult*ta.stdev(pg_bb_src, pg_bb_length)) ? "ALT" : "İÇ"))
+        valueLine_en := "\nBB: " + (close > (ta.sma(pg_bb_src, pg_bb_length) + pg_bb_mult*ta.stdev(pg_bb_src, pg_bb_length)) ? "ABOVE" : (close < (ta.sma(pg_bb_src, pg_bb_length) - pg_bb_mult*ta.stdev(pg_bb_src, pg_bb_length)) ? "BELOW" : "IN"))
+    else
+        float pg_value_here = nz(ta.vwap(pg_vwap_source))
+        string pg_label_val = "VW"
+        valueLine_tr := "\nDeğer: " + pg_label_val + (not na(pg_value_here) ? "  Δ: " + str.tostring(close - pg_value_here, "#.####") : "")
+        valueLine_en := "\nValue: " + pg_label_val + (not na(pg_value_here) ? "  Δ: " + str.tostring(close - pg_value_here, "#.####") : "")
     [valueLine_tr, valueLine_en]
-
 
 if eff_includeModule2
     if mt_sendCombinedAlerts and mt_buyAllowedCombined
