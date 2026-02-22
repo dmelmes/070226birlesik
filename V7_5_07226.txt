@@ -1930,7 +1930,7 @@ if mt_sendCombinedAlerts and mt_sellAllowedCombined
     techCtxM2s = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs = "\nTEK:" + techCtxM2s
     techENs = "\nTECH:" + techCtxM2s
-    prevNoteM2s = f_prev_bearish_note()
+    prevNoteM2s = ""  // No bearish note tracking (feature not implemented)
     bodyTRs = "\nFiyat: " + fmtMint(close) + tgTRs + techTRs + valTRs + prevNoteM2s
     bodyENs = "\nPrice: " + fmtMint(close) + tgENs + techENs + valENs + prevNoteM2s
     msgS = (etiketDil=="TR" ? hdrTRs + bodyTRs : hdrENs + bodyENs)
@@ -1945,7 +1945,7 @@ if mt_sendConfirmedAlerts and mt_sellAllowedConf and not mt_sellAllowedCombined
     techCtxM2s2 = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs2 = "\nTEK:" + techCtxM2s2
     techENs2 = "\nTECH:" + techCtxM2s2
-    prevNoteM2s2 = f_prev_bearish_note()
+    prevNoteM2s2 = ""  // No bearish note tracking (feature not implemented)
     bodyTRs2 = "\nFiyat: " + fmtMint(close) + tgTRs2 + techTRs2 + valTRs2 + prevNoteM2s2
     bodyENs2 = "\nPrice: " + fmtMint(close) + tgENs2 + techENs2 + valENs2 + prevNoteM2s2
     msgS2 = (etiketDil=="TR" ? hdrTRs2 + bodyTRs2 : hdrENs2 + bodyENs2)
@@ -2007,7 +2007,7 @@ if mt_sendCombinedAlerts and mt_sellAllowedCombined1D
     techCtxM2sd = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRsd = "\nTEK:" + techCtxM2sd
     techENsd = "\nTECH:" + techCtxM2sd
-    prevNoteM2sd = f_prev_bearish_note()
+    prevNoteM2sd = ""  // No bearish note tracking (feature not implemented)
     bodyTRsd = "\nFiyat: " + fmtMint(close) + tgTRsd + techTRsd + valTRsd + prevNoteM2sd
     bodyENsd = "\nPrice: " + fmtMint(close) + tgENsd + techENsd + valENsd + prevNoteM2sd
     msgSD = (etiketDil=="TR" ? hdrTRsd + bodyTRsd : hdrENsd + bodyENsd)
@@ -2022,7 +2022,7 @@ if mt_sendConfirmedAlerts and mt_sellAllowedConf1D and not mt_sellAllowedCombine
     techCtxM2s2d = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs2d = "\nTEK:" + techCtxM2s2d
     techENs2d = "\nTECH:" + techCtxM2s2d
-    prevNoteM2s2d = f_prev_bearish_note()
+    prevNoteM2s2d = ""  // No bearish note tracking (feature not implemented)
     bodyTRs2d = "\nFiyat: " + fmtMint(close) + tgTRs2d + techTRs2d + valTRs2d + prevNoteM2s2d
     bodyENs2d = "\nPrice: " + fmtMint(close) + tgENs2d + techENs2d + valENs2d + prevNoteM2s2d
     msgS2D = (etiketDil=="TR" ? hdrTRs2d + bodyTRs2d : hdrENs2d + bodyENs2d)
