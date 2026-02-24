@@ -1671,45 +1671,42 @@ if canSendUnified
 //     _bankoReprintMsg = "⚡ BANKO KESİŞME AL [REPAINT]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n⚠️ Uyarı: Bar kapanmadan önce kaybolabilir!" + f_prev_bullish_note()
 
 if allowLInt_Confirmed
-    // Enhanced analytics for BANKO AL
+    // Enhanced analytics for BANKO AL - FIXED: Better NA handling
     _banko_volAvg = ta.sma(volume, 20)
-    _banko_volRatio = na(_banko_volAvg) or na(volume) ? na : volume / _banko_volAvg
-    _banko_rsi = ta.rsi(close, 14)
-    _banko_atr = ta.atr(14)
-    _banko_atrPct = na(_banko_atr) or na(close) ? na : (_banko_atr / close) * 100
+    // Use nz() to avoid NA issues - if volAvg is 0 or NA, use volume as baseline
+    _banko_volRatio = nz(_banko_volAvg) == 0 ? (nz(volume) > 0 ? 1.0 : 0.0) : nz(volume) / nz(_banko_volAvg, 1)
+    _banko_rsi = nz(ta.rsi(close, 14), 50)  // Default to neutral 50 if NA
+    _banko_atr = nz(ta.atr(14), nz(close) * 0.02)  // Default to 2% of price if NA
+    _banko_atrPct = nz(close) == 0 ? 0.0 : (nz(_banko_atr) / nz(close)) * 100
     
     // Format Volume with percentage and category
     _banko_volText = ""
-    if na(_banko_volRatio)
-        _banko_volText := "Veri yok"
-    else
-        _banko_volPct = ((_banko_volRatio - 1.0) * 100)
-        _banko_volPctStr = (_banko_volPct >= 0 ? "+" : "") + str.tostring(_banko_volPct, "#") + "%"
-        _banko_volText := _banko_volRatio > 1.5 ? "GÜÇLÜ (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 1.0 ? "VAR (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 0.8 ? "ORTA (" + _banko_volPctStr + ") ⚠️" : "ZAYIF (" + _banko_volPctStr + ") ❌"
+    _banko_volPct = ((_banko_volRatio - 1.0) * 100)
+    _banko_volPctStr = (_banko_volPct >= 0 ? "+" : "") + str.tostring(_banko_volPct, "#") + "%"
+    _banko_volText := _banko_volRatio > 1.5 ? "GÜÇLÜ (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 1.0 ? "VAR (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 0.8 ? "ORTA (" + _banko_volPctStr + ") ⚠️" : "ZAYIF (" + _banko_volPctStr + ") ❌"
     
-    // Format Momentum
-    _banko_momText = na(_banko_rsi) ? "Hesaplanıyor" : (_banko_rsi > 60 ? "GÜÇLÜ (RSI " + str.tostring(_banko_rsi, "#") + " " + (_banko_rsi > _banko_rsi[1] ? "↑" : "↓") + ") ✅" : _banko_rsi > 50 ? "ORTA (RSI " + str.tostring(_banko_rsi, "#") + " →) ⚠️" : "ZAYIF (RSI " + str.tostring(_banko_rsi, "#") + " ↓) ❌")
+    // Format Momentum - Now always has value
+    _banko_rsiDir = _banko_rsi > nz(_banko_rsi[1], 50) ? "↑" : _banko_rsi < nz(_banko_rsi[1], 50) ? "↓" : "→"
+    _banko_momText = _banko_rsi > 60 ? "GÜÇLÜ (RSI " + str.tostring(_banko_rsi, "#") + " " + _banko_rsiDir + ") ✅" : _banko_rsi > 50 ? "ORTA (RSI " + str.tostring(_banko_rsi, "#") + " " + _banko_rsiDir + ") ⚠️" : "ZAYIF (RSI " + str.tostring(_banko_rsi, "#") + " " + _banko_rsiDir + ") ❌"
     
-    // Format Volatility
-    _banko_volText2 = na(_banko_atrPct) ? "Hesaplanıyor" : (_banko_atrPct > 4.0 ? "YÜKSEK ⚡" : _banko_atrPct > 2.0 ? "ORTA 📊" : "DÜŞÜK 😴")
+    // Format Volatility - Now always has value
+    _banko_volText2 = _banko_atrPct > 4.0 ? "YÜKSEK (" + str.tostring(_banko_atrPct, "#.#") + "%) ⚡" : _banko_atrPct > 2.0 ? "ORTA (" + str.tostring(_banko_atrPct, "#.#") + "%) 📊" : "DÜŞÜK (" + str.tostring(_banko_atrPct, "#.#") + "%) 😴"
     
-    // Calculate strength grade
+    // Calculate strength grade - Now always calculates (no NA checks needed)
     _banko_score = 0
-    if not na(_banko_volRatio)
-        if _banko_volRatio > 2.0
-            _banko_score += 3
-        else if _banko_volRatio > 1.5
-            _banko_score += 2
-        else if _banko_volRatio > 1.2
-            _banko_score += 1
+    if _banko_volRatio > 2.0
+        _banko_score += 3
+    else if _banko_volRatio > 1.5
+        _banko_score += 2
+    else if _banko_volRatio > 1.2
+        _banko_score += 1
     
-    if not na(_banko_rsi)
-        if _banko_rsi > 60
-            _banko_score += 2
-        else if _banko_rsi > 55
-            _banko_score += 1
+    if _banko_rsi > 60
+        _banko_score += 2
+    else if _banko_rsi > 55
+        _banko_score += 1
     
-    if not na(_banko_atrPct) and _banko_atrPct > 3.0
+    if _banko_atrPct > 3.0
         _banko_score += 1
     
     _banko_grade = _banko_score >= 5 ? "A+ ⭐⭐⭐" : _banko_score >= 3 ? "B ⭐⭐" : "C ⭐"
