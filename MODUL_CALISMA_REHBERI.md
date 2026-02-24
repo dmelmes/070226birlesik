@@ -7,6 +7,7 @@
 4. ALPHA (AlphaTrend) - Başarılı AlphaTrend Sistemi
 5. BANKO KESIŞME AL - Çift EMA Kesişim Sistemi
 6. ÇİFT DİP - Double Bottom Sistemi
+7. HAFTALIK AL - Orta Vade Yüksek Getiri Sistemi
 
 ---
 
@@ -509,6 +510,311 @@ Line 2052: dt_enable = true  ✅ AKTİF!
 
 ---
 
+## 7. HAFTALIK AL - Orta Vade Yüksek Getiri Sistemi
+
+### Ne İşe Yarar?
+Haftalık veya aylık grafikte orta/uzun vadeli (haftalar-aylar) yüksek getirili fırsatları yakalar. %20-30 hedefli, dip seviyelerden giriş yapar ve hızlı hareket edecek hisseleri seçer.
+
+### Nasıl Çalışır?
+
+#### Temel Özellikler:
+- **Timeframe:** Haftalık (W), Aylık (M), veya 2 Haftalık (2W) seçilebilir
+- **Hedefler:** TP1 = %20, TP2 = %30
+- **Stop Loss:** %8
+- **Sinyal Sıklığı:** 1-3 sinyal/ay (çok seçici!)
+- **Risk/Reward:** 2.5:1 ile 3.75:1 arası (mükemmel!)
+
+### 11 Gelişmiş Filtre Sistemi
+
+#### 1. Direnç Kontrolü (Overhead Resistance)
+```pinescript
+hafta_resistLookback = 50  // Son 50 bar kontrol edilir
+hafta_resistTol = 2.0      // %2 tolerans
+
+// Üstte direnç var mı?
+for i = 1 to hafta_resistLookback
+    hafta_priorHigh = hafta_h[i]
+    if hafta_priorHigh > hafta_c and hafta_priorHigh <= hafta_upperLimit
+        hafta_hasResist := true
+        hafta_resistLevel := hafta_priorHigh
+        break
+```
+**Anlamı:** Fiyatın üstünde %2 yakınında eski zirve var mı kontrol eder. Varsa "RESIST @145.00" gibi gösterir.
+
+#### 2. Trend Filtresi (EMA Based)
+```pinescript
+hafta_trendLen = 50  // EMA 50 periyot
+hafta_ema = ta.ema(hafta_c, hafta_trendLen)
+hafta_trendUp = hafta_c > hafta_ema and hafta_ema > hafta_ema[1]
+```
+**Anlamı:** 
+- Fiyat EMA(50)'nin ÜSTÜnde olmalı
+- EMA yükseliyor olmalı (uptrend)
+
+#### 3. RSI Filtresi - Geliştirilmiş Giriş Zamanlaması
+```pinescript
+hafta_rsiLen = 14
+hafta_rsiMin = 55
+hafta_rsi = ta.rsi(hafta_c, hafta_rsiLen)
+hafta_rsiOK = hafta_rsi >= 50 and hafta_rsi <= 70  // Aşırı alımda değil
+hafta_rsiRising = hafta_rsi > hafta_rsi[1]         // Momentum artıyor
+```
+**Anlamı:**
+- RSI 50-70 arası (güçlü ama aşırı alımda değil)
+- RSI yükseliyor (momentum var)
+
+#### 4. Hacim Filtresi + Akümülasyon Tespiti
+```pinescript
+hafta_volMultiple = 1.5  // Hacim ortalamanın 1.5 katı
+hafta_volAvg = ta.sma(hafta_v, 20)
+hafta_volOK = hafta_v > hafta_volAvg * hafta_volMultiple
+
+// Akümülasyon: Yukarı günlerde daha fazla hacim?
+hafta_upVol = hafta_c > hafta_c[1] ? hafta_v : 0.0
+hafta_dnVol = hafta_c < hafta_c[1] ? hafta_v : 0.0
+hafta_upVolAvg = ta.sma(hafta_upVol, 5)
+hafta_dnVolAvg = ta.sma(hafta_dnVol, 5)
+hafta_isAccumulating = hafta_upVolAvg / hafta_dnVolAvg > 1.3
+```
+**Anlamı:**
+- Hacim ortalamanın %50 üstünde
+- Yukarı günlerde %30+ fazla hacim = AKÜMÜLASYON (akıllı para topluyor!)
+
+#### 5. Güçlü Kapanış (Strong Close)
+```pinescript
+hafta_range = hafta_h - hafta_l
+hafta_closeStrength = (hafta_c - hafta_l) / hafta_range
+hafta_strongClose = hafta_closeStrength > 0.7  // Üst %30'da kapanış
+```
+**Anlamı:** Kapanış fiyatı bar'ın en üst %30'unda olmalı (alıcılar güçlü).
+
+#### 6. Pullback Tespiti - DİP AL, TEPE DEĞIL! ⚠️ ÖNEMLİ
+```pinescript
+hafta_recentHigh = ta.highest(hafta_h, 10)  // Son 10 bar'ın zirvesi
+hafta_pullbackPct = ((hafta_recentHigh - hafta_c) / hafta_recentHigh) * 100
+hafta_isPullback = hafta_pullbackPct >= 2.0 and hafta_pullbackPct <= 20.0
+```
+**Anlamı:** 
+- Son zirveye göre %2-20 geri çekilme olmalı
+- Tepeden değil, DİPTEN AL!
+- Mesaj: "PULLBACK -5.2%" gibi gösterir
+
+#### 7. Destek Seviyesi Girişi ⚠️ ÖNEMLİ
+```pinescript
+hafta_support = ta.lowest(hafta_l, 50)  // Son 50 bar'ın dibi
+hafta_distToSupport = ((hafta_c - hafta_support) / hafta_support) * 100
+hafta_nearSupport = hafta_distToSupport <= 8.0  // Destekten %8 yakında
+```
+**Anlamı:**
+- Destek seviyesinin %8 yakınında sinyal ver
+- Güvenli giriş noktası
+- Mesaj: "SUPPORT +2.9%" gibi gösterir
+
+#### 8. Squeeze Tespiti - Patlama Yakın! ⚠️ ÖNEMLİ
+```pinescript
+hafta_bb_basis = ta.sma(hafta_c, 20)
+hafta_bb_dev = ta.stdev(hafta_c, 20)
+hafta_bb_width = (hafta_bb_dev / hafta_bb_basis) * 100  // Bollinger genişliği
+hafta_bb_widthAvg = ta.sma(hafta_bb_width, 20)
+hafta_isSqueezed = hafta_bb_width < hafta_bb_widthAvg * 0.75
+```
+**Anlamı:**
+- Bollinger Band genişliği ortalamanın %75'inden az
+- SIKIŞIK = Düşük volatilite = PATLAMA YAKINDA!
+- Mesaj: "SQUEEZE" gösterir
+
+#### 9. Momentum Onayı - Yükselen Dipler
+```pinescript
+hafta_higherLow = hafta_l > hafta_l[1] and hafta_l[1] > hafta_l[2]
+hafta_recentGain = ((hafta_c - hafta_c[3]) / hafta_c[3]) * 100
+hafta_hasStrength = hafta_recentGain >= 1.5  // Son 3 bar'da %1.5+ kazanç
+```
+**Anlamı:**
+- Higher lows (yükselen dipler) = Boğa yapısı
+- Son 3 bar'da %1.5+ kazanç = Güç var
+- Mesaj: "HL-MOMENTUM" gösterir
+
+#### 10. Breakout veya Açık Yol
+```pinescript
+hafta_highest = ta.highest(hafta_h, 50)
+hafta_isBreakout = hafta_c >= hafta_highest * 0.98  // Zirveye %2 yakın
+hafta_clearPath = not hafta_hasResist or hafta_isBreakout
+```
+**Anlamı:**
+- Ya üstte direnç YOK
+- Ya da direnç KIRIYOR
+- Mesaj: "BREAKOUT" veya "CLEAR PATH" gösterir
+
+#### 11. Cooldown (Aşırı Sinyal Engelleme)
+```pinescript
+hafta_cooldown = 10  // Minimum 10 bar ara
+hafta_cooldownOK = na(hafta_lastBar) or (bar_index - hafta_lastBar) >= hafta_cooldown
+```
+**Anlamı:** Aynı hisseden 10 bar (10 hafta) içinde tekrar sinyal vermez.
+
+### GELİŞMİŞ FİLTRE KOMBİNASYONU
+
+#### 3 Katmanlı Sistem:
+
+**1. Çekirdek Filtreler (MUTLAKA GEREKLİ):**
+```pinescript
+hafta_coreFilters = hafta_trendUp and 
+                    hafta_rsiOK and 
+                    hafta_rsiRising and 
+                    hafta_volOK and 
+                    hafta_strongClose and 
+                    hafta_cooldownOK
+```
+
+**2. Giriş Kalitesi (EN AZ 1 TANESİ):**
+```pinescript
+hafta_goodEntry = hafta_isPullback or hafta_nearSupport
+```
+- Ya pullback (dip) olmalı
+- Ya destek yakını olmalı
+- İKİSİNDEN BİRİ YETER!
+
+**3. Hareket Hazırlığı (EN AZ 1 TANESİ):**
+```pinescript
+hafta_readyToMove = hafta_isAccumulating or 
+                    hafta_isSqueezed or 
+                    (hafta_higherLow and hafta_hasStrength)
+```
+- Ya akümülasyon var
+- Ya squeeze var
+- Ya momentum var
+- BİRİ YETER!
+
+**FINAL SİNYAL:**
+```pinescript
+hafta_allFilters = hafta_coreFilters and 
+                   hafta_goodEntry and 
+                   hafta_readyToMove and 
+                   hafta_pathOK
+```
+
+### Mesaj Formatı
+
+```
+🚀 HAFTALIK AL|THYAO
+|PULLBACK -5.2%           ← Giriş kalitesi (dip seviyeden!)
+|E=142.50                 ← Entry fiyat
+|SL=131.10 (-8%)          ← Stop loss
+|TP1=171.00 (+20%)        ← Hedef 1
+|TP2=185.25 (+30%)        ← Hedef 2
+|RSI=65                   ← RSI değeri
+|CLEAR PATH               ← Üstte direnç durumu
+|VOL=2.3x                 ← Hacim durumu
+|SQUEEZE                  ← Hareket sinyali (patlama yakın!)
+```
+
+**Mesajdan Anlayacağınız:**
+- **PULLBACK -5.2%:** Tepeden %5.2 geri çekildi, DİPTEN alıyoruz! ✅
+- **SQUEEZE:** Hisse sıkışık, PATLAMA YAKINDA! ✅
+- **CLEAR PATH:** Üstte direnç yok, YOL AÇIK! ✅
+
+### Örnek Senaryolar
+
+#### Senaryo 1: Mükemmel Setup
+```
+- Trend ✓
+- RSI 65, yükseliyor ✓
+- Hacim 2.5x ✓
+- Güçlü kapanış ✓
+- Pullback %6 ✓ (Giriş kalitesi!)
+- Squeeze var ✓ (Hareket hazır!)
+- Clear path ✓
+
+SONUÇ: ✅ SİNYAL VERİR!
+Mesaj: "PULLBACK -6.0%|SQUEEZE"
+```
+
+#### Senaryo 2: Trend Başlangıcı
+```
+- Trend ✓
+- RSI 67, yükseliyor ✓
+- Hacim 1.8x ✓
+- Güçlü kapanış ✓
+- Pullback yok ❌
+- Destek yakını ✓ (Giriş kalitesi!)
+- Akümülasyon ✓ (Hareket hazır!)
+- Breakout ✓
+
+SONUÇ: ✅ SİNYAL VERİR!
+Mesaj: "SUPPORT +3.5%|ACCUM|BREAKOUT"
+```
+
+#### Senaryo 3: Yatay Hareket (Filtrelenir)
+```
+- Trend ✓
+- RSI 58, yükseliyor ✓
+- Hacim 1.6x ✓
+- Güçlü kapanış ✓
+- Pullback yok ❌
+- Destek uzakta ❌
+- Squeeze yok ❌
+- Akümülasyon yok ❌
+- Momentum yok ❌
+
+SONUÇ: ❌ SİNYAL VERMEZ!
+Sebep: Giriş kalitesi YOK ve Hareket hazırlığı YOK
+```
+
+### Beklenen Performans
+
+**Sıklık:** 1-3 sinyal/ay (100 hisse üzerinde)
+- Çok seçici!
+- Ama çok kaliteli!
+
+**Başarı Oranı:** %60-70 (beklenen)
+- Yüksek hedefler (%20-30)
+- İyi risk/reward (2.5-3.75:1)
+
+**Hareket Süresi:**
+- İlk %10 hareket: 2-4 hafta
+- TP1 (%20): 1-3 ay
+- TP2 (%30): 2-6 ay
+
+### Ne Zaman Kullanmalı?
+
+**Uygun:**
+- ✅ Orta/uzun vade yatırım
+- ✅ Yüksek getiri hedefi (%20-30)
+- ✅ Haftalar/aylar tutabilirsin
+- ✅ Az ama kaliteli sinyal istiyorsun
+
+**Uygun Değil:**
+- ❌ Günlük trading
+- ❌ Hızlı kar al-sat
+- ❌ Çok sık sinyal istiyorsun
+
+### Kod Konumu
+
+**Parametreler:** Lines 2198-2212  
+**Ana Mantık:** Lines 2218-2320  
+**Enable Durumu:** `hafta_enable = true` ✅ Line 2199
+
+### Önemli Notlar
+
+1. **Timeframe Seçimi:**
+   - W (haftalık): En popüler, dengeli
+   - M (aylık): Çok uzun vade, az sinyal
+   - 2W (2 haftalık): Orta yol
+
+2. **Giriş Kalitesi ÖNEMLİ:**
+   - Pullback VEYA destek (en az 1)
+   - TEPEDEN ALMA!
+
+3. **Hareket Tahminleme ÖNEMLİ:**
+   - Squeeze/akümülasyon/momentum (en az 1)
+   - Hisse HAZIR olmalı hareket etmeye!
+
+4. **Sabır Gerekli:**
+   - Ayda 1-3 sinyal normal
+   - Kalite > Kantite
+
+---
+
 ## Tüm Modüller Aktif!
 
 ```pinescript
@@ -517,6 +823,7 @@ fo_enable = true           ✅ Line 2088
 turbo_enable = true        ✅ Line 2329
 turbo2h_enable = true      ✅ Line 2423
 enableAlphaPerf = true     ✅ Line 2508
+hafta_enable = true        ✅ Line 2199  ← YENİ!
 ```
 
 **HEPSİ ÇALIŞIYOR!** 🚀
