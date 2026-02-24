@@ -2312,7 +2312,20 @@ if hafta_enable
         // Enhanced message with entry quality and movement indicators
         hafta_entryInfo = hafta_isPullback ? "PULLBACK -" + str.tostring(hafta_pullbackPct, "#.#") + "%" : hafta_nearSupport ? "SUPPORT +" + str.tostring(hafta_distToSupport, "#.#") + "%" : "ENTRY"
         hafta_moveSignal = hafta_isSqueezed ? "SQUEEZE" : hafta_isAccumulating ? "ACCUM" : hafta_higherLow ? "HL-MOMENTUM" : "READY"
-        hafta_msg = "🚀 " + hafta_tfLabel + " AL|" + syminfo.ticker + "|" + hafta_entryInfo + "|E=" + str.tostring(hafta_c, "#.##") + "|SL=" + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)|TP1=" + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)|TP2=" + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)|RSI=" + str.tostring(hafta_rsi, "#") + "|" + hafta_pathStatus + "|VOL=" + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x|" + hafta_moveSignal
+        
+        // Multi-line readable message format
+        hafta_msg = "🚀 " + hafta_tfLabel + " AL [" + syminfo.ticker + "]\n"
+        hafta_msg += hafta_entryInfo + "\n\n"
+        hafta_msg += "📊 GİRİŞ: " + str.tostring(hafta_c, "#.##") + "\n"
+        hafta_msg += "🛑 STOP: " + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)\n"
+        hafta_msg += "🎯 TP1: " + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)\n"
+        hafta_msg += "🎯 TP2: " + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)\n\n"
+        hafta_msg += "📈 RSI: " + str.tostring(hafta_rsi, "#") + "\n"
+        hafta_msg += "📊 HACIM: " + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x\n"
+        hafta_msg += "✅ " + hafta_pathStatus + "\n"
+        if hafta_moveSignal != "READY"
+            hafta_msg += "🔥 " + hafta_moveSignal
+        
         hafta_chatId = hafta_chat_id == "" ? telegramChatIdBuy : hafta_chat_id
         send_event("HAFTA_BUY_" + str.tostring(hafta_t), hafta_msg, hafta_chatId, alert.freq_once_per_bar_close)
         label.new(bar_index, low, hafta_tfLabel + " AL\n" + hafta_entryInfo, style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.normal)
@@ -2353,8 +2366,8 @@ if turbo_enable and not safeBoot
     turbo_ema21 = ta.ema(close, turbo_emaLen)
     turbo_momentumFilter = turbo_rsiCross and turbo_rsi7 > turbo_rsi7Thresh and close > turbo_ema21
     
-    // Filter 3: Price Breakout
-    turbo_highestHigh = ta.highest(high, turbo_breakoutLen)[1]
+    // Filter 3: Price Breakout (fixed: exclude current bar to avoid self-fulfilling signal)
+    turbo_highestHigh = ta.highest(high, turbo_breakoutLen)[1]  // [1] excludes current bar
     turbo_atr = ta.atr(turbo_atrLen)
     turbo_range = high - low
     turbo_breakoutFilter = close > turbo_highestHigh and close > open and turbo_range > 1.5 * turbo_atr
@@ -2447,8 +2460,8 @@ if turbo2h_enable and not safeBoot
     turbo2h_ema = ta.ema(close, turbo2h_emaLen)
     turbo2h_momentumFilter = turbo2h_rsi > 50 and turbo2h_rsi7 > turbo2h_rsi7Thresh and close > turbo2h_ema
     
-    // Breakout filter (7-day lookback)
-    turbo2h_highest = ta.highest(high, turbo2h_breakoutLen)[1]
+    // Breakout filter (7-bar lookback, fixed: exclude current bar)
+    turbo2h_highest = ta.highest(high, turbo2h_breakoutLen)[1]  // [1] excludes current bar
     turbo2h_atr = ta.atr(turbo2h_atrLen)
     turbo2h_breakoutFilter = close > turbo2h_highest and close > open and (high - low) > 1.3 * turbo2h_atr
     
@@ -2573,7 +2586,8 @@ f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, histMinSamples,
             
             array.unshift(_history, _runUpPct)
             
-            while array.size(_history) > histMaxSamples
+            // Array size limit (memory optimization - max 50 samples)
+            while array.size(_history) > math.min(histMaxSamples, 50)
                 array.pop(_history)
             
             // Reset evaluation state
