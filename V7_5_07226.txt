@@ -2237,67 +2237,29 @@ if hafta_enable
     hafta_ema = ta.ema(hafta_c, hafta_trendLen)
     hafta_trendUp = hafta_c > hafta_ema and hafta_ema > hafta_ema[1]
     
-    // 3. RSI filter - improved for better entry timing
+    // 3. RSI filter - strong momentum
     hafta_rsi = ta.rsi(hafta_c, hafta_rsiLen)
-    hafta_rsiOK = hafta_rsi >= 50 and hafta_rsi <= 70  // Not overbought
-    hafta_rsiRising = hafta_rsi > hafta_rsi[1]  // Momentum building
+    hafta_rsiOK = hafta_rsi >= hafta_rsiMin and hafta_rsi < 80
     
-    // 4. Volume confirmation with accumulation detection
+    // 4. Volume confirmation
     hafta_volAvg = ta.sma(hafta_v, 20)
     hafta_volOK = hafta_v > hafta_volAvg * hafta_volMultiple
-    // Volume pattern: more volume on up days = accumulation
-    hafta_upVol = hafta_c > hafta_c[1] ? hafta_v : 0.0
-    hafta_dnVol = hafta_c < hafta_c[1] ? hafta_v : 0.0
-    hafta_upVolAvg = ta.sma(hafta_upVol, 5)
-    hafta_dnVolAvg = ta.sma(hafta_dnVol, 5)
-    hafta_isAccumulating = hafta_dnVolAvg > 0 ? hafta_upVolAvg / hafta_dnVolAvg > 1.3 : true
     
     // 5. Price action - strong close near high
     hafta_range = hafta_h - hafta_l
     hafta_closeStrength = hafta_range > 0 ? (hafta_c - hafta_l) / hafta_range : 0
     hafta_strongClose = hafta_closeStrength > 0.7  // Close in top 30%
     
-    // 6. Pullback detection - buy dips, not tops (NEW - CRITICAL)
-    hafta_recentHigh = ta.highest(hafta_h, 10)  // Last 10 bars high
-    hafta_pullbackPct = hafta_recentHigh > 0 ? ((hafta_recentHigh - hafta_c) / hafta_recentHigh) * 100 : 0
-    hafta_isPullback = hafta_pullbackPct >= 2.0 and hafta_pullbackPct <= 20.0  // 2-20% pullback
-    
-    // 7. Support level entry - near support for better risk/reward (NEW)
-    hafta_support = ta.lowest(hafta_l, hafta_resistLookback)
-    hafta_distToSupport = hafta_support > 0 ? ((hafta_c - hafta_support) / hafta_support) * 100 : 100
-    hafta_nearSupport = hafta_distToSupport <= 8.0  // Within 8% of support
-    
-    // 8. Squeeze detection - low volatility = imminent move (NEW)
-    hafta_bb_basis = ta.sma(hafta_c, 20)
-    hafta_bb_dev = ta.stdev(hafta_c, 20)
-    hafta_bb_width = hafta_bb_basis > 0 and hafta_bb_dev > 0 ? (hafta_bb_dev / hafta_bb_basis) * 100 : 0
-    hafta_bb_widthAvg = ta.sma(hafta_bb_width, 20)
-    hafta_isSqueezed = hafta_bb_widthAvg > 0 ? hafta_bb_width < hafta_bb_widthAvg * 0.75 : false  // Tight range
-    
-    // 9. Momentum confirmation - higher lows structure (NEW)
-    hafta_higherLow = hafta_l > hafta_l[1] and hafta_l[1] > hafta_l[2]
-    hafta_recentGain = hafta_c[3] > 0 ? ((hafta_c - hafta_c[3]) / hafta_c[3]) * 100 : 0
-    hafta_hasStrength = hafta_recentGain >= 1.5  // At least 1.5% in 3 bars
-    
-    // 10. Breakout or clear path
+    // 6. Breakout or clear path
     hafta_highest = ta.highest(hafta_h, hafta_resistLookback)
     hafta_isBreakout = hafta_c >= hafta_highest * 0.98  // Within 2% of high
     hafta_clearPath = not hafta_hasResist or hafta_isBreakout
     
-    // 11. Cooldown check
+    // 7. Cooldown check
     hafta_cooldownOK = na(hafta_lastBar) or (bar_index - hafta_lastBar) >= hafta_cooldown
     
-    // ENHANCED FILTER COMBINATION - More selective for better entries and quick movement
-    // Core filters (must have)
-    hafta_coreFilters = hafta_trendUp and hafta_rsiOK and hafta_rsiRising and hafta_volOK and hafta_strongClose and hafta_cooldownOK
-    // Entry quality filters (at least 1 must be true for good entry)
-    hafta_goodEntry = hafta_isPullback or hafta_nearSupport
-    // Movement prediction filters (at least 1 must be true for quick move)
-    hafta_readyToMove = hafta_isAccumulating or hafta_isSqueezed or (hafta_higherLow and hafta_hasStrength)
-    // Path must be clear
-    hafta_pathOK = hafta_clearPath
-    // Combine all
-    hafta_allFilters = hafta_coreFilters and hafta_goodEntry and hafta_readyToMove and hafta_pathOK
+    // Combine all filters
+    hafta_allFilters = hafta_trendUp and hafta_rsiOK and hafta_volOK and hafta_strongClose and hafta_clearPath and hafta_cooldownOK
     
     // Signal confirmed on bar close
     hafta_signal := hafta_allFilters and barstate.isconfirmed
@@ -2309,26 +2271,10 @@ if hafta_enable
         hafta_tp2 = hafta_c * (1 + hafta_tp2Pct / 100)
         hafta_pathStatus = hafta_isBreakout ? "BREAKOUT" : (hafta_hasResist ? "RESIST @" + str.tostring(hafta_resistLevel, "#.##") : "CLEAR PATH")
         hafta_tfLabel = hafta_timeframe == "W" ? "HAFTALIK" : hafta_timeframe == "M" ? "AYLIK" : "2HAFTA"
-        // Enhanced message with entry quality and movement indicators
-        hafta_entryInfo = hafta_isPullback ? "PULLBACK -" + str.tostring(hafta_pullbackPct, "#.#") + "%" : hafta_nearSupport ? "SUPPORT +" + str.tostring(hafta_distToSupport, "#.#") + "%" : "ENTRY"
-        hafta_moveSignal = hafta_isSqueezed ? "SQUEEZE" : hafta_isAccumulating ? "ACCUM" : hafta_higherLow ? "HL-MOMENTUM" : "READY"
-        
-        // Multi-line readable message format
-        hafta_msg = "🚀 " + hafta_tfLabel + " AL [" + syminfo.ticker + "]\n"
-        hafta_msg += hafta_entryInfo + "\n\n"
-        hafta_msg += "📊 GİRİŞ: " + str.tostring(hafta_c, "#.##") + "\n"
-        hafta_msg += "🛑 STOP: " + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)\n"
-        hafta_msg += "🎯 TP1: " + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)\n"
-        hafta_msg += "🎯 TP2: " + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)\n\n"
-        hafta_msg += "📈 RSI: " + str.tostring(hafta_rsi, "#") + "\n"
-        hafta_msg += "📊 HACIM: " + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x\n"
-        hafta_msg += "✅ " + hafta_pathStatus + "\n"
-        if hafta_moveSignal != "READY"
-            hafta_msg += "🔥 " + hafta_moveSignal
-        
+        hafta_msg = "🚀 " + hafta_tfLabel + " AL|" + syminfo.ticker + "|E=" + str.tostring(hafta_c, "#.##") + "|SL=" + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)|TP1=" + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)|TP2=" + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)|RSI=" + str.tostring(hafta_rsi, "#") + "|" + hafta_pathStatus + "|VOL=" + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x"
         hafta_chatId = hafta_chat_id == "" ? telegramChatIdBuy : hafta_chat_id
         send_event("HAFTA_BUY_" + str.tostring(hafta_t), hafta_msg, hafta_chatId, alert.freq_once_per_bar_close)
-        label.new(bar_index, low, hafta_tfLabel + " AL\n" + hafta_entryInfo, style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.normal)
+        label.new(bar_index, low, hafta_tfLabel + " AL", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.normal)
 else
     hafta_signal := false
 
