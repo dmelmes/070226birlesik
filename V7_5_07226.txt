@@ -2210,6 +2210,11 @@ hafta_tp1Pct         = input.float(20.0, "TP1 %", minval=10, step=5, group=grpHA
 hafta_tp2Pct         = input.float(30.0, "TP2 %", minval=15, step=5, group=grpHAFTA)
 hafta_slPct          = input.float(8.0, "Stop Loss %", minval=5, step=1, group=grpHAFTA)
 hafta_cooldown       = input.int(10, "Cooldown Bars", minval=5, group=grpHAFTA)
+hafta_rsiRisingEnable = input.bool(true, "RSI Yükseliyor Filtresi", group=grpHAFTA, tooltip="Bu hafta RSI geçen haftadan yüksekse sinyal ver. Momentum kazanan ve patlamaya yakın hisseleri yakalar. Düşen RSI ile tepe sinyallerini engeller.")
+hafta_pullbackEnable  = input.bool(false, "Pullback Filtresi (Opsiyonel)", group=grpHAFTA, tooltip="KAPALI (önerilen — BIST için): Hem pullback hem doğrudan breakout sinyalleri gelir, sinyal kaçırmaz.\nACIK: Sadece son zirveden belirli % geri çekilmiş hisselerde sinyal verir.\nÖRNEK: -5% = hisse son 10 barlık zirvesinden %5 aşağıya inmiş demek. Düz yukarı giden hisseler bu filtreden GEÇEMEZ, sinyal gelmez.")
+hafta_pullbackLen     = input.int(10, "Pullback Zirve Dönemi (bar)", minval=5, group=grpHAFTA)
+hafta_pullbackMin     = input.float(1.0, "Pullback Min %", minval=0.5, step=0.5, group=grpHAFTA)
+hafta_pullbackMax     = input.float(15.0, "Pullback Max %", minval=2.0, step=1.0, group=grpHAFTA)
 
 // Haftalık AL calculation
 var bool hafta_signal = false
@@ -2241,6 +2246,9 @@ if hafta_enable
     hafta_rsi = ta.rsi(hafta_c, hafta_rsiLen)
     hafta_rsiOK = hafta_rsi >= hafta_rsiMin and hafta_rsi < 80
     
+    // 3b. RSI Rising - momentum kazanıyor filtresi (patlamaya yakın)
+    hafta_rsiRisingOK = not hafta_rsiRisingEnable or (hafta_rsi > hafta_rsi[1])
+    
     // 4. Volume confirmation
     hafta_volAvg = ta.sma(hafta_v, 20)
     hafta_volOK = hafta_v > hafta_volAvg * hafta_volMultiple
@@ -2255,11 +2263,16 @@ if hafta_enable
     hafta_isBreakout = hafta_c >= hafta_highest * 0.98  // Within 2% of high
     hafta_clearPath = not hafta_hasResist or hafta_isBreakout
     
-    // 7. Cooldown check
+    // 7. Pullback filtresi (opsiyonel — default kapalı)
+    hafta_recentPeak = ta.highest(hafta_h, hafta_pullbackLen)[1]
+    hafta_pullbackPct = hafta_recentPeak > 0 ? (hafta_recentPeak - hafta_c) / hafta_recentPeak * 100 : 0
+    hafta_pullbackOK = not hafta_pullbackEnable or (hafta_pullbackPct >= hafta_pullbackMin and hafta_pullbackPct <= hafta_pullbackMax)
+    
+    // 8. Cooldown check
     hafta_cooldownOK = na(hafta_lastBar) or (bar_index - hafta_lastBar) >= hafta_cooldown
     
     // Combine all filters
-    hafta_allFilters = hafta_trendUp and hafta_rsiOK and hafta_volOK and hafta_strongClose and hafta_clearPath and hafta_cooldownOK
+    hafta_allFilters = hafta_trendUp and hafta_rsiOK and hafta_rsiRisingOK and hafta_volOK and hafta_strongClose and hafta_clearPath and hafta_pullbackOK and hafta_cooldownOK
     
     // Signal confirmed on bar close
     hafta_signal := hafta_allFilters and barstate.isconfirmed
@@ -2271,7 +2284,9 @@ if hafta_enable
         hafta_tp2 = hafta_c * (1 + hafta_tp2Pct / 100)
         hafta_pathStatus = hafta_isBreakout ? "BREAKOUT" : (hafta_hasResist ? "RESIST @" + str.tostring(hafta_resistLevel, "#.##") : "CLEAR PATH")
         hafta_tfLabel = hafta_timeframe == "W" ? "HAFTALIK" : hafta_timeframe == "M" ? "AYLIK" : "2HAFTA"
-        hafta_msg = "🚀 " + hafta_tfLabel + " AL|" + syminfo.ticker + "|E=" + str.tostring(hafta_c, "#.##") + "|SL=" + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)|TP1=" + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)|TP2=" + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)|RSI=" + str.tostring(hafta_rsi, "#") + "|" + hafta_pathStatus + "|VOL=" + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x"
+        hafta_rsiArrow = hafta_rsi > hafta_rsi[1] ? " (↑)" : " (→)"
+        hafta_pullbackLine = hafta_pullbackEnable ? "\n📉 PULLBACK -" + str.tostring(hafta_pullbackPct, "#.#") + "% (son " + str.tostring(hafta_pullbackLen) + " bar zirvesinden)" : ""
+        hafta_msg = "🚀 " + hafta_tfLabel + " AL [" + syminfo.ticker + "]" + hafta_pullbackLine + "\n\n📊 GİRİŞ: " + str.tostring(hafta_c, "#.##") + "\n🛑 STOP: " + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)\n🎯 TP1: " + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)\n🎯 TP2: " + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)\n\n📈 RSI: " + str.tostring(hafta_rsi, "#") + hafta_rsiArrow + "\n📊 HACİM: " + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x\n✅ " + hafta_pathStatus
         hafta_chatId = hafta_chat_id == "" ? telegramChatIdBuy : hafta_chat_id
         send_event("HAFTA_BUY_" + str.tostring(hafta_t), hafta_msg, hafta_chatId, alert.freq_once_per_bar_close)
         label.new(bar_index, low, hafta_tfLabel + " AL", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.normal)
