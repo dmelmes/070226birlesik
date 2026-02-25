@@ -1,8 +1,10 @@
 //@version=5
-indicator(title="V7-12", shorttitle="V7-12",  overlay=true,  max_labels_count=500, max_lines_count=500, max_boxes_count=200,
+indicator(title="V7-6", shorttitle="V7-6",  overlay=true,  max_labels_count=500, max_lines_count=500, max_boxes_count=200,
      dynamic_requests=true)
 
+
 // ---
+// 0) GENEL — Stabil Başlık, Versiyon Etiketi, Safe Boot, Anchor Plot
 // ---
 grpGEN = "Genel"
 versionLabel   = input.string("2.6-sqz-pro", "Versiyon Etiketi", group=grpGEN)
@@ -12,6 +14,7 @@ showAnchorPlot = input.bool(true, "Anchor Plot", group=grpGEN)
 plot(showAnchorPlot ? close : na, title="ANCHOR_PRICE", display=display.none)
 
 // ---
+// 1) INPUTS
 // ---
 grpST = "Supertrend"
 atrLen          = input.int(10,   "ATR Period", group=grpST, minval=1)
@@ -206,13 +209,84 @@ showStrongShapeFiltered= input.bool(false,"Strong Buy shape uses daily filter (M
 mg_enableAlertsChart = input.bool(false,  "MG: Chart TF kapanışında mesaj", group=grpMG)
 mg_enableAlertsMTF   = input.bool(true,  "MG: 1H/4H/1D kapanışlarında mesaj", group=grpMG)
 
+// PG grupları
+pg_groupSig  = "PG — Sinyal"
+pg_groupVA   = "PG — Değer Alanı"
+pg_groupInfo = "PG — Raporlama"
+pg_groupHTF  = "PG — HTF Filtre"
+pg_groupAL   = "PG — Alarm"
+pg_groupEX   = "PG — Ek Filtre"
+pg_groupMTF  = "PG — MTF (1H/4H/1D)"
+pg_groupHC   = "PG — Yüksek Güven (Uzman Filtreler)"
 
+// PG — temel
+pg_enable = input.bool(true, "PG Modülü Aktif", group=pg_groupSig)
+pg_use_close_confirm = input.bool(true, "Bar kapanışında teyit (PG)", group=pg_groupSig)
+pg_chart_also_send   = input.bool(true, "PG Chart TF mesajlarını da gönder (MTF açıksa ek)", group=pg_groupSig)
 
+pg_use_zscore_vol  = input.bool(true,  "Hacimde Z-Score (PG)", group=pg_groupSig)
+pg_vol_period      = input.int(20,     "Hacim Periyodu (PG)", minval=5, group=pg_groupSig)
+pg_vol_multiplier  = input.float(2.0,  "Hacim Çarpanı SMA (PG)", step=0.1, group=pg_groupSig)
+pg_vol_z_threshold = input.float(2.0,  "Z-Score Eşiği (PG)", step=0.1, group=pg_groupSig)
+pg_cmf_period      = input.int(20,  "CMF Periyodu (PG)", minval=5, group=pg_groupSig)
+pg_cmf_pos_th      = input.float(0.05,  "CMF Pozitif (AL) (PG)", step=0.01, group=pg_groupSig)
+pg_cmf_neg_th      = input.float(-0.05, "CMF Negatif (SAT) (PG)", step=0.01, group=pg_groupSig)
 
+// PG — Değer alanı
+pg_va_mode       = input.string("VWAP","Değer Alanı (PG)", options=["VWAP","Anchored VWAP","MA+Bollinger"], group=pg_groupVA)
+pg_vwap_source   = input.source(hlc3,  "VWAP Kaynağı (PG)", group=pg_groupVA)
+pg_anchor_use_session = input.bool(false,"Her seans başı anchor (PG)", group=pg_groupVA)
+pg_use_anchor_by_time = input.bool(true, "Anchor'ı tarih/saat ile seç (PG)", group=pg_groupVA)
+pg_anchor_time        = input.time(timestamp("2024-01-01T00:00:00"), "Anchor Tarihi (UTC) (PG)", group=pg_groupVA)
+pg_bb_src     = input.source(close, "BB Kaynağı (PG)", group=pg_groupVA)
+pg_bb_length  = input.int(20,"BB MA Periyodu (PG)", minval=5, group=pg_groupVA)
+pg_bb_mult    = input.float(2.0,"BB Std Sapma (PG)", step=0.1, group=pg_groupVA)
+pg_bb_ma_type = input.string("SMA","BB MA Türü (PG)", options=["SMA","EMA"], group=pg_groupVA)
 
+// PG — raporlama
+pg_trend_len     = input.int(50, "Trend EMA (PG)", minval=5, group=pg_groupInfo)
+pg_fast_len      = input.int(12, "MACD Hızlı (PG)",  minval=1, group=pg_groupInfo)
+pg_slow_len      = input.int(26, "MACD Yavaş (PG)",  minval=2, group=pg_groupInfo)
+pg_signal_len    = input.int(9,  "MACD Sinyal (PG)", minval=1, group=pg_groupInfo)
+pg_adx_len       = input.int(14,"ADX Periyodu (PG)", minval=5, group=pg_groupInfo)
+pg_adx_threshold = input.int(22,"ADX Güçlü Eşik (PG)", minval=5, group=pg_groupInfo)
+pg_atr_len       = input.int(14,"ATR Periyodu (PG)", minval=5, group=pg_groupInfo)
 
+// PG — HTF
+pg_enable_htf_cmf = input.bool(false, "HTF CMF yön filtresi (PG)", group=pg_groupHTF)
+pg_htf_cmf_tf     = input.timeframe("60","HTF CMF TF (PG)", group=pg_groupHTF)
+pg_htf_cmf_pos_th = input.float(0.0,"HTF CMF Pozitif (AL) (PG)", step=0.01, group=pg_groupHTF)
+pg_htf_cmf_neg_th = input.float(0.0,"HTF CMF Negatif (SAT) (PG)", step=0.01, group=pg_groupHTF)
 
+// PG — alarm
+pg_enable_alerts     = input.bool(true,  "PG Alert aktif (Chart TF)", group=pg_groupAL)
+pg_use_json_telegram = input.bool(false, "Telegram JSON (PG’ye özgü) — Global ile OR", group=pg_groupAL)
+pg_chat_buy          = input.string("",  "chat_id (PG BUY) (boş=global)", group=pg_groupAL)
+pg_chat_sell         = input.string("",  "chat_id (PG SELL) (boş=global)", group=pg_groupAL)
+pg_daily_once        = input.bool(true,  "Aynı gün bir kez (PG)", group=pg_groupAL)
+pg_cooldown_minutes  = input.int(15,      "Cooldown (dk) (PG)", minval=0, group=pg_groupAL)
+pg_window_enable     = input.bool(true,  "PG Window Enable (son X TF barda PG varsa gönder)", group=pg_groupAL)
+pg_window_bars       = input.int(3,      "PG Window Bars (TF)", minval=1, group=pg_groupAL)
 
+// PG — ek filtre
+pg_suppress_buy_if_daily_up = input.bool(false, "Günlük değişim ≥ %X ise PG-AL engelle", group=pg_groupEX)
+pg_daily_up_pct_threshold   = input.float(8.0, "Günlük % eşiği (PG)", step=0.5, minval=0.0, group=pg_groupEX)
+pg_require_di_align         = input.bool(true, "PG: Yön için DI hizası şart", group=pg_groupEX)
+pg_require_ad_confirm       = input.bool(true, "PG: AKD (Acc/Dist) eğim onayı gerekli", group=pg_groupEX)
+pg_ad_slope_len             = input.int(5, "PG: AKD eğim periyodu", minval=1, group=pg_groupEX)
+
+// PG — Yüksek Güven (Uzman) — yeni
+pg_hc_enable            = input.bool(true,  "PG High-Confidence (Uzman filtreler)", group=pg_groupHC)
+pg_hc_cmf_pos           = input.float(0.10, "HC: CMF pozitif eşiği (AL)", step=0.01, group=pg_groupHC)
+pg_hc_cmf_neg           = input.float(-0.10,"HC: CMF negatif eşiği (SAT)", step=0.01, group=pg_groupHC)
+pg_hc_min_adx           = input.int(18,     "HC: Min ADX", minval=5, group=pg_groupHC)
+pg_hc_min_di_diff       = input.float(3.0,  "HC: Min DI fark puanı", step=0.5, group=pg_groupHC)
+pg_hc_vwap_dist_pct     = input.float(0.05, "HC: Min VWAP mesafe %", step=0.05, minval=0.0, group=pg_groupHC)
+pg_hc_min_body_pct      = input.float(50.0, "HC: Min gövde/oran %", step=5.0, minval=0.0, maxval=100.0, group=pg_groupHC)
+pg_hc_close_near_pct    = input.float(25.0, "HC: Kapanışın range ucuna yakın %", step=5.0, minval=0.0, maxval=50.0, group=pg_groupHC)
+pg_hc_neg_day_rule      = input.bool(true,  "HC: Gün negatifken inflow kapat; güçlü akümülasyon istisna", group=pg_groupHC)
+pg_hc_limit_down_guard  = input.bool(true,  "HC: Taban-kilit koruması (AL'i bastır)", group=pg_groupHC)
+pg_hc_limit_down_len    = input.int(5,      "HC: Taban-kilit pencere (bar)", minval=3, group=pg_groupHC)
 
 // MTF Alerts (1H/2H/4H/1D)
 grpMTF = "MTF Alerts (1H/2H/4H/1D)"
@@ -246,14 +320,6 @@ prevSessionMinute = input.int(0, "Seans açılışı dakika", minval=0, maxval=5
 // SQZ (LazyBear)
 grpSQZ = "SQZ (LazyBear)"
 //sqz_enable        = input.bool(false, "SQZ Modülü Aktif", group=grpSQZ)
-// PG constants (for SQZ compatibility after PG removal)
-pg_adx_len = 14
-pg_trend_len = 50
-pg_va_mode = "VWAP"  // Simplified after PG removal
-pg_vwap_source = hlc3
-pg_bb_src = close
-pg_bb_length = 20
-pg_bb_mult = 2.0
 //sqz_mode          = input.string("Off", "Kullanım Modu", options=["Off","Filter","Signal"], group=grpSQZ)
 //sqz_filter_mode   = input.string("Strict", "Filter Sıkılığı", options=["Strict","Soft"], group=grpSQZ)
 sqz_enable        = input.bool(true, "SQZ Modülü Aktif", group=grpSQZ)
@@ -267,7 +333,9 @@ sqz_useTR         = input.bool(true, "Use TrueRange (KC)", group=grpSQZ)
 sqz_add_to_unified= input.bool(false, "Unified mesaja SQZ olayı ekle", group=grpSQZ)
 
 // ---
+// SAFE BOOT — etkin bayraklar
 // ---
+eff_pg_enable           = pg_enable           and not safeBoot
 eff_includeModule2      = includeModule2      and not safeBoot
 eff_mg_enableAlertsMTF  = mg_enableAlertsMTF  and not safeBoot
 eff_mtf_enable          = mtf_enable          and not safeBoot
@@ -301,6 +369,7 @@ eff_cooldownMinutes        = useProfile ? (isAggProfile ? 5 : isBalProfile ? 15 
 useCloseConfirm = enableHybrid ? true : confirmOnClose
 
 // ---
+// 2) HELPERS & TEXTS
 // ---
 fTxt(tr, en) => etiketDil == "TR" ? tr : en
 TXT_BUY       = fTxt("K - AL","Buy")
@@ -314,6 +383,9 @@ TXT_EXIT      = fTxt("K - Poz Çıkış","Exit Position")
 TXT_RES       = fTxt("K - Direnç","Res")
 TXT_SUP       = fTxt("K - Destek","Sup")
 
+var string PG_CTX_TR = ""
+var string PG_CTX_EN = ""
+var string pg_ctx_for_unified_buy = ""
 var string tech_ctx_for_unified_buy = ""
 TXT_MG_BUY    = fTxt("K - MULTI GÜÇLÜ AL","Multi Strong Buy")
 
@@ -434,6 +506,7 @@ dayChangePct = na(dClosePrev) or dClosePrev==0 ? 0.0 : (dCloseNow - dClosePrev) 
 buyBlockedByPct = suppressBuyIfDailyUp and dayChangePct >= dailyUpPctThreshold
 
 // ---
+// QG — Overextension Filter (Daily lookbacks)
 // ---
 // Pack daily closes into single request for efficiency
 f_buyqg_daily_pack() => [close, close[5], close[20], close[126]]
@@ -452,6 +525,19 @@ fChatId(isBuyEvent, isSellEvent) =>
     _buy  = telegramChatIdBuy  != "" ? telegramChatIdBuy  : _def
     _sell = telegramChatIdSell != "" ? telegramChatIdSell : _def
     isBuyEvent ? _buy : isSellEvent ? _sell : _def
+
+f_pg_chat(isBuy) =>
+    isBuy ? (pg_chat_buy  != "" ? pg_chat_buy  : telegramChatIdBuy)
+          : (pg_chat_sell != "" ? pg_chat_sell : telegramChatIdSell)
+
+// Günlük + cooldown (PG)
+f_pg_allow(ev, dayRef, tRef, daily_once, cooldown_minutes, nowTime, currDayStr) =>
+    _ok = ev
+    if _ok and daily_once
+        _ok := dayRef != currDayStr
+    if _ok and cooldown_minutes > 0
+        _ok := na(tRef) or (nowTime - tRef > cooldown_minutes * 60 * 1000)
+    _ok
 
 // Önceki gün notu (Berlin 09:00)
 f_is_leap(y) => (y % 4 == 0 and y % 100 != 0) or (y % 400 == 0)
@@ -487,6 +573,7 @@ f_prev_bullish_note() =>
     s
 
 // ---
+// 3) SUPER TREND
 // ---
 trRange = ta.tr(true)
 atrAlt  = ta.sma(trRange, atrLen)
@@ -513,6 +600,7 @@ plot(stDir==-1?stDn:na, "ST Down", color=color.new(color.red,0),   linewidth=2, 
 bgcolor(stHighlight ? (stDir==1 ? color.new(color.green,88) : color.new(color.red,88)) : na)
 
 // ---
+// 4) SLINGSHOT / EMAs
 // ---
 emaFast = ta.ema(close, emaFastLen)
 emaSlow = ta.ema(close, emaSlowLen)
@@ -530,6 +618,7 @@ pFast = plot(showEMAs ? emaFast : na, "EMA Fast", color=color.new(color.gray,0),
 fill(pSlow, pFast, color = showEMAs ? color.new(color.silver,70) : na)
 
 // ---
+// 4.7) SQZ (LazyBear) — hesaplama
 // ---
 sqz_source = close
 sqz_basis  = ta.sma(sqz_source, sqz_lenBB)
@@ -551,6 +640,7 @@ sqz_base = close - math.avg(math.avg(ta.highest(high, sqz_lenKC), ta.lowest(low,
 sqz_val  = ta.linreg(sqz_base, sqz_lenKC, 0)
 
 // ---
+// 5) HTF EMA200
 // ---
 f_htf_pack(_slopeLen, _atrLen) =>
     _ema200 = ta.ema(close, 200)
@@ -618,6 +708,7 @@ f_buyqg_check() =>
         _s := high > ta.highest(high, buyQG_donchian_len)[1] ? _s + 1 : _s
     (not buyQG_enable) or ((_s >= buyQG_min_score) and ((not buyQG_breakout_req) or high > ta.highest(high, buyQG_donchian_len)[1]) and not buyqg_overext_blocked)
 
+// QG — Chart TF
 // Donchian Channel
 buyqg_donch_high = ta.highest(high, buyQG_donchian_len)
 buyqg_donch_break = high > buyqg_donch_high[1]
@@ -630,16 +721,19 @@ buyqg_bars_since_break = na(buyqg_last_breakout_bar) ? 999999 : (bar_index - buy
 buyqg_in_retest_window = buyqg_bars_since_break <= buyQG_retest_window
 
 // ---
+// QG — Scoring Model
 // ---
 // EMA50 for trend alignment
 buyqg_ema50 = ta.ema(close, 50)
 
 buyqg_score = 0
 
+// Score 1: Trend alignment (close above EMA50 or HTF EMA200 up)
 if buyQG_score_trend
     buyqg_trend_ok = (close > buyqg_ema50) or htfUp
     buyqg_score := buyqg_trend_ok ? buyqg_score + 1 : buyqg_score
 
+// Score 2: ADX strength
 if buyQG_score_adx
     // Proper ADX calculation
     buyqg_adx_len = 14
@@ -656,6 +750,7 @@ if buyQG_score_adx
     buyqg_adx_ok = buyqg_adx_val >= buyQG_adx_threshold
     buyqg_score := buyqg_adx_ok ? buyqg_score + 1 : buyqg_score
 
+// Score 3: CMF (reuse pg_cmf if available)
 if buyQG_score_cmf
     buyqg_cmf_len = 20
     buyqg_mfm = ((close - low) - (high - close)) / (high - low)
@@ -664,6 +759,7 @@ if buyQG_score_cmf
     buyqg_cmf_ok = buyqg_cmf >= buyQG_cmf_threshold
     buyqg_score := buyqg_cmf_ok ? buyqg_score + 1 : buyqg_score
 
+// Score 4: Breakout or retest
 if buyQG_score_breakout
     buyqg_break_ok = buyqg_donch_break or buyqg_in_retest_window
     buyqg_score := buyqg_break_ok ? buyqg_score + 1 : buyqg_score
@@ -674,6 +770,7 @@ buyqg_score_pass = buyqg_score >= buyQG_min_score
 buyqg_quality_pass = (not buyQG_enable) or (buyqg_score_pass and buyqg_breakout_pass and not buyqg_overext_blocked)
 
 // ---
+// SELL QG - Overext Filter
 // Calc neg % change
 sellqg_pct_5d   = na(buyqg_d_close5) or buyqg_d_close5 <= 0 ? 0.0 : -(buyqg_d_close - buyqg_d_close5) / buyqg_d_close5 * 100.0
 sellqg_pct_20d  = na(buyqg_d_close20) or buyqg_d_close20 <= 0 ? 0.0 : -(buyqg_d_close - buyqg_d_close20) / buyqg_d_close20 * 100.0
@@ -690,10 +787,12 @@ sellqg_donch_break = low < sellqg_donch_low[1]
 sellqg_ema50 = ta.ema(close, 50)
 sellqg_score = 0
 
+// Score 1: Trend (close<EMA50 or HTF down)
 if sellQG_score_trend
     sellqg_trend_ok = (close < sellqg_ema50) or htfDn
     sellqg_score := sellqg_trend_ok ? sellqg_score + 1 : sellqg_score
 
+// Score 2: ADX (same calc as BUY)
 if sellQG_score_adx
     sellqg_adx_len = 14
     sellqg_tr = ta.tr(true)
@@ -709,6 +808,7 @@ if sellQG_score_adx
     sellqg_adx_ok = sellqg_adx_val >= sellQG_adx_threshold
     sellqg_score := sellqg_adx_ok ? sellqg_score + 1 : sellqg_score
 
+// Score 3: CMF (neg = sell)
 if sellQG_score_cmf
     sellqg_cmf_len = 20
     sellqg_mfm = ((close - low) - (high - close)) / (high - low)
@@ -717,6 +817,7 @@ if sellQG_score_cmf
     sellqg_cmf_ok = sellqg_cmf <= sellQG_cmf_threshold
     sellqg_score := sellqg_cmf_ok ? sellqg_score + 1 : sellqg_score
 
+// Score 4: Breakdown
 if sellQG_score_breakout
     sellqg_break_ok = sellqg_donch_break
     sellqg_score := sellqg_break_ok ? sellqg_score + 1 : sellqg_score
@@ -727,6 +828,7 @@ sellqg_score_pass = sellqg_score >= sellQG_min_score
 sellqg_qpass = (not sellQG_enable) or (sellqg_score_pass and sellqg_breakout_pass and not sellqg_ox_block)
 
 // ---
+// 6) INTERSECTION + Quick Tech Fallback
 // ---
 var int lastFlipBar = na
 var int lastFlipDir = 0
@@ -764,6 +866,7 @@ f_quick_tech_ctx() =>
     t
 
 // ---
+// 7) POSITION STATE + Çizimler
 // ---
 var float lastEntryPrice = na
 var float initialStop    = na
@@ -807,6 +910,7 @@ shortIntersectEntry := shortIntersectEntry and sqzGateShort
 newLongEntry        := newLongEntry        and sqzGateLong
 newShortEntry       := newShortEntry       and sqzGateShort
 
+// Apply QG to BANKO signals (optional)
 if buyQG_enable and buyQG_apply_banko
     longIntersectEntry  := longIntersectEntry  and buyqg_quality_pass
     longIntersectLabel  := longIntersectLabel  and buyqg_quality_pass
@@ -964,6 +1068,7 @@ if exitLong or exitShort
     lastEntryDir := 0
 
 // ---
+// 7.5) Pivot Destek/Direnç
 // ---
 var rsResLines  = array.new_line()
 var rsResLabels = array.new_label()
@@ -1007,6 +1112,7 @@ if showPivotSup and not na(pivotLowVal)
     f_push_line(rsSupLines, rsSupLabels, plLine, lbs, maxPivotLevels)
 
 // ---
+// 8) MODULE-2 (MesutTrend + MG) — 4H + 1D
 // ---
 f_at_mt(_ap,_coeff,_useRSI,_useOriginalATR)=>
     atrUsed = _useOriginalATR ? ta.sma(ta.tr(true),_ap) : ta.atr(_ap)
@@ -1195,11 +1301,12 @@ if eff_includeModule2 and mg_enableAlertsChart and barstate.isconfirmed and stro
     [tgTR, tgEN] = f_target_block_buy(close, (trailStopEnabled and havePosition and not na(liveStop) ? liveStop : stUp))
     headerTR = "🟢 Multi Güçlü AL [" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]"
     headerEN = "🟢 Multi Strong BUY [" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]"
+    pgBlock  = (unifiedIncludePG and eff_pg_enable and pg_ctx_for_unified_buy!="") ? ((etiketDil=="TR" ? "\nPG:\n" : "\nPG\n") + pg_ctx_for_unified_buy) : ""
     techCtx  = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techBlock= (etiketDil=="TR" ? "\nTEK\n" : "\nTECH\n") + techCtx
     prevNote = f_prev_bullish_note()
-    bodyTR   = "\nFiyat: " + fmtMint(close) + tgTR  + techBlock + prevNote
-    bodyEN   = "\nPrice: " + fmtMint(close) + tgEN  + techBlock + prevNote
+    bodyTR   = "\nFiyat: " + fmtMint(close) + tgTR + pgBlock + techBlock + prevNote
+    bodyEN   = "\nPrice: " + fmtMint(close) + tgEN + pgBlock + techBlock + prevNote
     msg_mg_chart = (etiketDil=="TR" ? headerTR + bodyTR : headerEN + bodyEN)
     send_event(id_mg_chart, msg_mg_chart, fChatId(true, false), alert.freq_once_per_bar_close)
     [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("Multi Güçlü AL","Multi Strong BUY", f_tf_label(timeframe.period))
@@ -1244,6 +1351,7 @@ f_mg_strong_on_tf(_tf) =>
     eff_includeModule2 and (sc >= need)
 
 sendMgMtf(tf, tfLabel, useTf)=>
+    // Skip if requested timeframe is not higher than chart timeframe (prevents redundant calls and errors)
     if eff_includeModule2 and eff_mg_enableAlertsMTF and useTf and f_is_higher_tf(tf)
         tfClosed = request.security(syminfo.tickerid, tf, barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
         mgStrong = f_mg_strong_on_tf(tf)
@@ -1254,11 +1362,12 @@ sendMgMtf(tf, tfLabel, useTf)=>
             id  = "MG_MTF_"+tfLabel+"_BUY_" + str.tostring(bar_index)
             hdrTR = "🟢 MTF Multi Güçlü AL [" + syminfo.ticker + "] " + tfLabel
             hdrEN = "🟢 MTF Multi Strong BUY [" + syminfo.ticker + "] " + tfLabel
+            pgBlock  = (unifiedIncludePG and eff_pg_enable and pg_ctx_for_unified_buy!="") ? ((etiketDil=="TR" ? "\nPG:\n" : "\nPG\n") + pg_ctx_for_unified_buy) : ""
             techCtx  = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
             techBlock= (etiketDil=="TR" ? "\nTEK\n" : "\nTECH\n") + techCtx
             prevNote = f_prev_bullish_note()
-            bodyTR   = "\nFiyat: " + fmtMint(close) + tgTR  + techBlock + prevNote
-            bodyEN   = "\nPrice: " + fmtMint(close) + tgEN  + techBlock + prevNote
+            bodyTR   = "\nFiyat: " + fmtMint(close) + tgTR + pgBlock + techBlock + prevNote
+            bodyEN   = "\nPrice: " + fmtMint(close) + tgEN + pgBlock + techBlock + prevNote
             msg = (etiketDil=="TR" ? hdrTR + bodyTR : hdrEN + bodyEN)
             send_event(id, msg, fChatId(true,false), alert.freq_once_per_bar_close)
             [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("MTF Multi Güçlü AL","MTF Multi Strong BUY", tfLabel)
@@ -1268,9 +1377,234 @@ sendMgMtf("240","4H", mtf_use_4h)
 sendMgMtf("D","1D", mtf_use_1d)
 
 // ---
+// 9) PG MODÜL (Chart TF) + Yüksek Güven
 // ---
+var bool buyHC = na
+var bool selHC = na
+var bool pg_buy_sig_base = na
+var bool pg_sell_sig_base = na
+
+f_pg_cmf(h,l,c,v,len)=>
+    hhll=h-l
+    mfm=hhll!=0?((c-l)-(h-c))/hhll:0.0
+    mfv=mfm*v
+    sum_mfv=ta.sma(mfv,len)*len
+    sum_vol=ta.sma(v,len)*len
+    sum_vol!=0?sum_mfv/sum_vol:0.0
+
+f_pg_dmi(len)=>
+    upMove=high-high[1]
+    downMove=low[1]-low
+    plusDM=(upMove>downMove and upMove>0)?upMove:0.0
+    minusDM=(downMove>upMove and downMove>0)?downMove:0.0
+    tr1=high-low
+    tr2=math.abs(high-close[1])
+    tr3=math.abs(low -close[1])
+    tr =math.max(tr1,math.max(tr2,tr3))
+    atr=ta.rma(tr,len)
+    plusDI = atr!=0?100*ta.rma(plusDM,len)/atr:0.0
+    minusDI= atr!=0?100*ta.rma(minusDM,len)/atr:0.0
+    dx=(plusDI+minusDI!=0)?100*math.abs(plusDI-minusDI)/(plusDI+minusDI):0.0
+    adx=ta.rma(dx,len)
+    [plusDI,minusDI,adx]
+
+f_ad_slope(h,l,c,v,len)=>
+    hhll=h-l
+    mfm=hhll!=0?((c-l)-(h-c))/hhll:0.0
+    mfv=mfm*v
+    ta.sma(mfv, len)
+
+pg_json_global = useCustomJsonAlert
+pg_json_local  = pg_use_json_telegram
+pg_json = pg_json_local or pg_json_global
+
+var string pg_dayBuy  = ""
+// var string pg_daySell = ""
+var int    pg_tBuy    = na
+// var int    pg_tSell   = na
+pg_cool_ms = pg_cooldown_minutes * 60 * 1000
+
+float pg_vol_sma     = na
+float pg_vol_stdev   = na
+float pg_vol_z       = na
+bool  pg_spike       = false
+float pg_cmf         = na
+bool  pg_money_in    = false
+bool  pg_money_out   = false
+float pg_htf_cmf     = na
+
+pg_htf_cmf_val = eff_pg_enable ? request.security(syminfo.tickerid, pg_htf_cmf_tf, f_pg_cmf(high,low,close,volume,pg_cmf_period), barmerge.gaps_off, barmerge.lookahead_off) : na
+
+if eff_pg_enable
+    pg_vol_sma   := ta.sma(volume, pg_vol_period)
+    pg_vol_stdev := ta.stdev(volume, pg_vol_period)
+    pg_vol_z     := pg_vol_stdev>0 ? (volume-pg_vol_sma)/pg_vol_stdev : 0.0
+    pg_spike_sma = volume > pg_vol_sma * pg_vol_multiplier
+    pg_spike_z   = pg_vol_z > pg_vol_z_threshold
+    pg_spike     := pg_use_zscore_vol ? pg_spike_z : pg_spike_sma
+
+    pg_cmf       := f_pg_cmf(high,low,close,volume,pg_cmf_period)
+    pg_money_in  := pg_cmf > pg_cmf_pos_th
+    pg_money_out := pg_cmf < pg_cmf_neg_th
+
+    pg_htf_cmf := pg_enable_htf_cmf ? pg_htf_cmf_val : na
+    pg_ok_buy   = not pg_enable_htf_cmf or (pg_htf_cmf >= pg_cmf_pos_th)
+    pg_ok_sell  = not pg_enable_htf_cmf or (pg_htf_cmf <= pg_cmf_neg_th)
+
+    pg_vwap = ta.vwap(pg_vwap_source)
+    var float pg_cum_pv = na
+    var float pg_cum_vol = na
+    var bool  pg_anch_on = false
+    var float pg_anch_vwap = na
+    pg_new_sess = ta.change(time("D")) != 0
+    if pg_anchor_use_session and pg_new_sess
+        pg_cum_pv := 0.0
+        pg_cum_vol := 0.0
+        pg_anch_on := true
+        pg_anch_vwap := na
+    if pg_use_anchor_by_time and not pg_anchor_use_session
+        if (time >= pg_anchor_time) and not pg_anch_on
+            pg_cum_pv := 0.0
+            pg_cum_vol := 0.0
+            pg_anch_on := true
+            pg_anch_vwap := na
+    if pg_anch_on
+        pg_cum_pv  := nz(pg_cum_pv)  + (pg_vwap_source * volume)
+        pg_cum_vol := nz(pg_cum_vol) + volume
+        pg_anch_vwap := pg_cum_vol > 0 ? pg_cum_pv/pg_cum_vol : na
+    else
+        pg_anch_vwap := na
+
+    pg_ma_mid = pg_bb_ma_type=="SMA" ? ta.sma(pg_bb_src, pg_bb_length) : ta.ema(pg_bb_src, pg_bb_length)
+    pg_bb_dev = ta.stdev(pg_bb_src, pg_bb_length)
+    pg_bb_up  = pg_ma_mid + pg_bb_mult*pg_bb_dev
+    pg_bb_dn  = pg_ma_mid - pg_bb_mult*pg_bb_dev
+
+    float pg_value = na
+    string pg_label_val = ""
+    if pg_va_mode=="VWAP" or pg_va_mode=="Anchored VWAP"
+        pg_value := nz(pg_anch_vwap, pg_vwap)
+        pg_label_val := "VW"
+    else
+        pg_value := pg_ma_mid
+        pg_label_val := "BB"
+
+    pg_above = na(pg_value) ? false : close > pg_value
+    pg_below = na(pg_value) ? false : close < pg_value
+
+    [pg_di_p, pg_di_m, pg_adx_val] = f_pg_dmi(pg_adx_len)
+    ad_slope_val = f_ad_slope(high, low, close, volume, pg_ad_slope_len)
+
+    pg_raw_buy  = pg_spike and pg_money_in  and pg_above and close>open and pg_ok_buy
+    pg_raw_sell = pg_spike and pg_money_out and pg_below and close<open and pg_ok_sell
+    pg_confirm  = pg_use_close_confirm ? barstate.isconfirmed : true
+
+    pg_buy_sig_base  := pg_raw_buy  and pg_confirm and (not pg_require_di_align or pg_di_p > pg_di_m) and (not pg_require_ad_confirm or ad_slope_val > 0)
+    pg_sell_sig_base := pg_raw_sell and pg_confirm and (not pg_require_di_align or pg_di_m > pg_di_p) and (not pg_require_ad_confirm or ad_slope_val < 0)
+
+    rangeV     = math.max(high - low, syminfo.mintick*5)
+    bodyRatio  = math.abs(close - open) / rangeV
+    closePos   = (close - low) / rangeV
+    closePosSell = (high - close) / rangeV
+    vwapDistPct = na(pg_value) ? 0.0 : math.abs(close - pg_value) / close * 100.0
+    diDiff     = math.abs(pg_di_p - pg_di_m)
+
+    adx_ok     = pg_adx_val >= pg_hc_min_adx
+    di_ok      = (not pg_require_di_align) or diDiff >= pg_hc_min_di_diff
+    cmf_ok_buy = pg_cmf >= pg_hc_cmf_pos
+    cmf_ok_sel = pg_cmf <= pg_hc_cmf_neg
+    body_ok_b  = (bodyRatio*100.0 >= pg_hc_min_body_pct) and (closePos*100.0 >= (100.0 - pg_hc_close_near_pct))
+    body_ok_s  = (bodyRatio*100.0 >= pg_hc_min_body_pct) and (closePosSell*100.0 >= (100.0 - pg_hc_close_near_pct))
+    vwap_ok    = vwapDistPct >= pg_hc_vwap_dist_pct
+
+    strongAccum  = (pg_cmf >= pg_hc_cmf_pos) and (ad_slope_val > 0) and pg_above
+    negDayBlock  = pg_hc_neg_day_rule and (dayChangePct < 0) and (not strongAccum)
+    buyHC := adx_ok and di_ok and cmf_ok_buy and pg_above and body_ok_b and vwap_ok and not negDayBlock
+    selHC := adx_ok and di_ok and cmf_ok_sel and pg_below and body_ok_s and vwap_ok
+
+    pg_buy_sig  = pg_hc_enable ? (pg_buy_sig_base  and buyHC) : pg_buy_sig_base
+    pg_sell_sig = pg_hc_enable ? (pg_sell_sig_base and selHC)  : pg_sell_sig_base
+
+    pg_trend_ema = ta.ema(close, pg_trend_len)
+    pg_trend_stat= etiketDil=="TR" ? (close>pg_trend_ema ? "YUK" : "DUS") : (close>pg_trend_ema ? "UP" : "DOWN")
+    [pg_macd, pg_macd_sig, pg_hist] = ta.macd(close, pg_fast_len, pg_slow_len, pg_signal_len)
+    pg_macd_stat = etiketDil=="TR" ? (pg_macd>pg_macd_sig ? "POZ" : "NEG") : (pg_macd>pg_macd_sig ? "POS" : "NEG")
+    pg_adx_interp= etiketDil=="TR" ? (pg_adx_val > pg_adx_threshold ? "GT" : "ZAY") : (pg_adx_val > pg_adx_threshold ? "ST" : "WEAK")
+    pg_atr       = ta.atr(pg_atr_len)
+    pg_vdiff     = na(pg_value)?na:(close-pg_value)
+
+    string pg_bb_pos = ""
+    if pg_va_mode=="MA+Bollinger"
+        pg_bb_pos := etiketDil=="TR" ? (close > pg_bb_up ? "ÜST" : (close < pg_bb_dn ? "ALT" : "İÇ"))
+                                     : (close > pg_bb_up ? "ABOVE" : (close < pg_bb_dn ? "BELOW" : "IN"))
+
+    string __pg_val_line_tr = ""
+    string __pg_val_line_en = ""
+    if pg_va_mode=="MA+Bollinger"
+        __pg_val_line_tr := "\nBB Konumu: " + pg_bb_pos
+        __pg_val_line_en := "\nBB Position: " + pg_bb_pos
+    else
+        __pg_val_line_tr := "\nDeğer: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+        __pg_val_line_en := "\nValue: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+
+    string pg_ctx_tr =
+          "TR:" + pg_trend_stat +
+          "\nMACD: " + pg_macd_stat +
+          "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")" +
+          "\nATR: " + str.tostring(pg_atr, "#.##") +
+          "\nCMF: " + str.tostring(pg_cmf, "#.###") +
+          __pg_val_line_tr
+
+    string pg_ctx_en =
+          "TR:" + pg_trend_stat +
+          "\nMACD: " + pg_macd_stat +
+          "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")" +
+          "\nATR: " + str.tostring(pg_atr, "#.##") +
+          "\nCMF: " + str.tostring(pg_cmf, "#.###") +
+          __pg_val_line_en
+
+    pg_ctx_for_unified_buy := (etiketDil=="TR" ? pg_ctx_tr : pg_ctx_en)
+    PG_CTX_TR := pg_ctx_tr
+    PG_CTX_EN := pg_ctx_en
+
+    string hdrB_tr = "", hdrB_en = "", valueLine_tr = "", valueLine_en = "", body_tr = "", body_en = "", txtB = ""
+    // string hdrS_tr = "", hdrS_en = "", body_tr_s = "", body_en_s = "", txtS = ""
+
+    canSendNow = true
+    pg_buy_blocked_pct = pg_suppress_buy_if_daily_up and (dayChangePct >= pg_daily_up_pct_threshold)
+    pg_currDay = str.format("{0}-{1}-{2}", year(time), month(time), dayofmonth(time))
+
+    allowChartBuy  = f_pg_allow(pg_enable_alerts and pg_chart_also_send and pg_buy_sig  and not pg_buy_blocked_pct, pg_dayBuy,  pg_tBuy,  pg_daily_once, pg_cooldown_minutes, time, pg_currDay)
+    // allowChartSell = f_pg_allow(pg_enable_alerts and pg_chart_also_send and pg_sell_sig, pg_daySell, pg_tSell, pg_daily_once, pg_cooldown_minutes, time, pg_currDay)
 
 
+    if canSendNow and allowChartBuy
+        hdrB_tr := "💰 PG GİRİŞ — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
+        hdrB_en := "💰 PG IN — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
+        valueLine_tr := pg_va_mode=="MA+Bollinger" ? "\nBB Konumu: " + pg_bb_pos : "\nDeğer: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+        valueLine_en := pg_va_mode=="MA+Bollinger" ? "\nBB Position: " + pg_bb_pos : "\nValue: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+        prevNotePG = f_prev_bullish_note()
+        body_tr := "\nFiyat: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_tr + prevNotePG
+        body_en := "\nPrice: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_en + prevNotePG
+        txtB := (etiketDil=="TR" ? hdrB_tr + body_tr : hdrB_en + body_en)
+        send_event("PG_CHART_BUY_"+str.tostring(bar_index), txtB, f_pg_chat(true), alert.freq_once_per_bar_close)
+        pg_dayBuy := pg_currDay
+        pg_tBuy   := time
+        [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("PG GİRİŞ","PG IN", f_tf_label(timeframe.period))
+
+    // PG EXIT disabled
+    // if canSendNow and allowChartSell
+    //     hdrS_tr := "💨 PG ÇIKIŞ — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
+    //     hdrS_en := "💨 PG OUT — " + syminfo.ticker + " [" + f_tf_label(timeframe.period) + "]"
+    //     valueLine_tr := pg_va_mode=="MA+Bollinger" ? "\nBB Konumu: " + pg_bb_pos : "\nDeğer: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+    //     valueLine_en := pg_va_mode=="MA+Bollinger" ? "\nBB Position: " + pg_bb_pos : "\nValue: " + pg_label_val + (not na(pg_vdiff) ? "  Δ: " + str.tostring(pg_vdiff, "#.####") : "")
+    //     body_tr_s := "\nFiyat: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_tr
+    //     body_en_s := "\nPrice: " + fmtMint(close) + "\nTR:" + pg_trend_stat + "\nMACD: " + pg_macd_stat + "\nADX: " + str.tostring(pg_adx_val, "#.##") + " (" + pg_adx_interp + ")\nATR: " + str.tostring(pg_atr, "#.##") + "\nCMF: " + str.tostring(pg_cmf, "#.###") + valueLine_en
+    //     txtS := (etiketDil=="TR" ? hdrS_tr + body_tr_s : hdrS_en + body_en_s)
+    //     send_event("PG_CHART_SELL_"+str.tostring(bar_index), txtS, f_pg_chat(false), alert.freq_once_per_bar_close)
+
+// ---
+// 10) HYBRID POTENTIAL
 // ---
 var float __barDurationMs = 0.0
 if barstate.isnew
@@ -1298,6 +1632,7 @@ eligiblePotBuy  = enableHybrid and potRawBuy  and htfOkLongLabel  and isRT and b
 eligiblePotSell = enableHybrid and potRawSell and htfOkShortLabel and isRT and barProgressPct >= eff_hybMinProgressPct and potSellStableCount >= eff_hybStabilityTicks and (na(potSellBarSent) or bar_index != potSellBarSent) and potCooldownOkSell and not combinePotAndConfirm
 
 // ---
+// 11) CONFIRMED EVENTS (Unified Build) + SQZ
 // ---
 confirmWrap(c)=> (not useCloseConfirm or barstate.isconfirmed)?c:false
 evBuy   = confirmWrap(includeBuyFlip        and buySignal          and htfOkLongAlert)
@@ -1407,6 +1742,7 @@ if allowExit
     tExit := time
 
 // ---
+// SQZ Signal modu — olayları oluştur (1H/4H/1D destekli)
 // ---
 
 // 1) SQZ Durumunu Hesaplayan Fonksiyon
@@ -1427,6 +1763,7 @@ f_sqz_state() =>
     _sqz_val  = ta.linreg(_sqz_base, sqz_lenKC, 0)
     [_sqzOn, _sqzOff, _sqz_val]
 
+// 2) MTF İçin Özel Sinyal Hesaplayıcı + ADX/Trend Bilgisi
 // Bu fonksiyon çağrıldığı zaman diliminde Sinyal, ADX ve Trend durumunu aynı anda hesaplar
 f_sqz_mtf_logic_with_context(_adxLen, _trendLen) =>
     [_on, _off, _val] = f_sqz_state()
@@ -1501,8 +1838,12 @@ ema_ch = ta.ema(close, pg_trend_len) // PG ayarını kullanıyoruz (50)
 sqz_long_signal  = false  // Disabled: sqz_enable and (sqz_mode=="Signal") and sqzOff_ch and not sqzOff_ch[1] and (sqzVal_ch > 0)
 sqz_short_signal = false  // Disabled: sqz_enable and (sqz_mode=="Signal") and sqzOff_ch and not sqzOff_ch[1] and (sqzVal_ch < 0)
 
+// if sqz_enable and (sqz_mode=="Signal") and sqz_long_signal
+//     f_send_sqz_advanced(f_tf_label(timeframe.period), true, close, sqzVal_ch, adx_ch, ema_ch, telegramChatIdBuy)
 
 // SQZ short disabled to reduce tokens
+// if sqz_enable and (sqz_mode=="Signal") and sqz_short_signal
+//     f_send_sqz_advanced(f_tf_label(timeframe.period), false, close, sqzVal_ch, adx_ch, ema_ch, telegramChatIdSell)
 
 // MTF SQZ (4H, 1D) - Gelişmiş Context ile
 f_send_sqz_mtf(tf, tfLabel, useTf)=>
@@ -1512,10 +1853,15 @@ f_send_sqz_mtf(tf, tfLabel, useTf)=>
         [mtf_lSig, mtf_sSig, mtf_val, mtf_adx, mtf_ema, mtf_close, tfClosed] =  request.security(syminfo.tickerid, tf, f_sqz_mtf_logic_with_context(pg_adx_len, pg_trend_len), barmerge.gaps_off, barmerge.lookahead_off)
 
         // ESKİ satır SİLİNECEK (artık gerek yok):
+        // tfClosed = request.security(syminfo.tickerid, tf, barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
 
         if tfClosed and mtf_lSig
             f_send_sqz_advanced(tfLabel, true, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdBuy)
+        // if tfClosed and mtf_sSig
+        //     f_send_sqz_advanced(tfLabel, false, mtf_close, mtf_val, mtf_adx, mtf_ema, telegramChatIdSell)
 
+// 4H ve 1D için çağır (1H disabled to save tokens)
+// f_send_sqz_mtf("60",  "1H", true)
 f_send_sqz_mtf("240", "4H", true)
 f_send_sqz_mtf("D",   "1D", true)
 
@@ -1562,6 +1908,7 @@ if not isBuyLike and not isSellLike
 
 useChatId = fChatId(isBuyLike, isSellLike)
 // ---
+// 11.5) KESİNLİK MASTER GATE
 // ---
 grpMASTER = "Kesinlik Master Gate"
 masterEnable        = input.bool(true,  "Master Gate: (Kesişim + HTF Strict + PG HC + M2/MTF) olmadan UNIFIED gönderme", group=grpMASTER)
@@ -1583,17 +1930,19 @@ hc_m2_ok =
   or nz(mt_buyAllowedConf1D, false)
   or nz(mt_buyAllowedCandle1D, false)
 
+// PG High-Confidence kapısı
+pg_hc_long_ok  = eff_pg_enable ? (pg_hc_enable ? nz(buyHC, false) : nz(pg_buy_sig_base, false)) : true
+pg_hc_short_ok = eff_pg_enable ? (pg_hc_enable ? nz(selHC,  false) : nz(pg_sell_sig_base,false)) : true
 
 // Kesişim ve tüm kapılar
-
-// PG High Confidence gates (PG removed, always allow unified alerts)
-hc_long_gate = true   // Was: pg_hc_long_ok (PG module removed)
-hc_short_gate = true  // Was: pg_hc_short_ok (PG module removed)
+hc_long_gate  = evLInt and isHTFStrictLong  and pg_hc_long_ok  and (not masterReqM2orMTF or hc_m2_ok)
+hc_short_gate = evSInt and isHTFStrictShort and pg_hc_short_ok and (not masterReqM2orMTF or (nz(mt_sellAllowedCombined, false) or nz(mt_sellAllowedCombined1D, false)))
 
 // Unified mesajın izni
 canSendUnified = enableUnifiedAlert and (events != "") and (not masterEnable or hc_long_gate or hc_short_gate)
 
 // ---
+// 12) HYBRID POTENTIAL SEND
 // ---
 if hybUseSeparateAlerts and eligiblePotBuy and not buyBlockedByPct
     potHdr  = (etiketDil=="TR" ? "⚠️ [POTANSİYEL AL " : "⚠️ [POTENTIAL BUY ") + syminfo.ticker + "]"
@@ -1616,6 +1965,7 @@ if hybUseSeparateAlerts and eligiblePotSell
         label.new(bar_index, close, etiketDil=="TR"?"POT SAT":"POT SELL", style=label.style_label_down, color=color.new(color.orange,0), textcolor=color.white)
 
 // ---
+// 12.5) ERKEN BANKO
 // ---
 var int earlyBankoBuyLast  = na
 var int earlyBankoSellLast = na
@@ -1642,6 +1992,7 @@ if earlyBankoSell
     earlyBankoSellLast := time
 
 // ---
+// 13) UNIFIED MESSAGE — Master Gate ile
 // ---
 if canSendUnified
     priceStr = fmtMint(close)
@@ -1654,9 +2005,10 @@ if canSendUnified
     posDir   = havePosition ? (lastEntryDir==1 ? "LONG" : "SHORT") : "FLAT"
     header   = "📈 [" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]"
     hedefLine = showRTargets ? ((etiketDil=="TR" ? "\nHedef1: " : "\nTarget1: ") + r1Str + (etiketDil=="TR" ? "   Hedef2: " : "   Target2: " ) + r2Str) : ""
+    pgBlock  = (unifiedIncludePG and eff_pg_enable and isBuyLike and pg_ctx_for_unified_buy!="") ? ((etiketDil=="TR" ? "\nPG:\n" : "\nPG\n") + pg_ctx_for_unified_buy) : ""
     techBlock= (st_event!="" or slingshot_note!="" or enableHTF) ? ((etiketDil=="TR" ? "\nTEK\n" : "\nTECH\n") + tech_ctx_for_unified_buy) : ""
     prevNoteU = f_prev_bullish_note()
-    body = (etiketDil=="TR" ? ("Olay: " + events + "\nFiyat: " + priceStr + "\nPozisyon: " + posDir + "\nGiriş: " + entryStr + "\nStop: " + stopStr + "\nRisk Mesafe: " + riskStr + hedefLine  + techBlock + prevNoteU + "\nT:" + timeStr) : ("Event: " + events + "\nPrice: " + priceStr + "\nPosition: " + posDir + "\nEntry: " + entryStr + "\nStop: " + stopStr + "\nRisk Distance: " + riskStr + hedefLine  + techBlock + prevNoteU + "\nT:" + timeStr))
+    body = (etiketDil=="TR" ? ("Olay: " + events + "\nFiyat: " + priceStr + "\nPozisyon: " + posDir + "\nGiriş: " + entryStr + "\nStop: " + stopStr + "\nRisk Mesafe: " + riskStr + hedefLine + pgBlock + techBlock + prevNoteU + "\nT:" + timeStr) : ("Event: " + events + "\nPrice: " + priceStr + "\nPosition: " + posDir + "\nEntry: " + entryStr + "\nStop: " + stopStr + "\nRisk Distance: " + riskStr + hedefLine + pgBlock + techBlock + prevNoteU + "\nT:" + timeStr))
     unifiedId = "UNIFIED_"+str.tostring(bar_index)
     freqU = useCloseConfirm ? alert.freq_once_per_bar_close : alert.freq_once_per_bar
     send_event(unifiedId, header + "\n" + body, useChatId, freqU)
@@ -1667,46 +2019,53 @@ if canSendUnified
     else if mgChartFired
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("Multi Güçlü AL", "Multi Strong BUY", f_tf_label(timeframe.period))
 
+// BANKO KESIŞME AL - CONFIRMED only (REPAINT disabled per user request)
+// All BANKO AL messages go to dedicated chat_id: telegramChatIdMtfBanko
 // if allowLInt_Repaint  // DISABLED
 //     _bankoReprintMsg = "⚡ BANKO KESİŞME AL [REPAINT]\n[" + syminfo.ticker + "] [" + f_tf_label(timeframe.period) + "]\nFiyat: " + fmtMint(close) + "\n⚠️ Uyarı: Bar kapanmadan önce kaybolabilir!" + f_prev_bullish_note()
+//     _bankoReprintId = "BANKO_REPAINT_" + str.tostring(bar_index)
+//     send_event(_bankoReprintId, _bankoReprintMsg, telegramChatId, alert.freq_once_per_bar)
 
 if allowLInt_Confirmed
-    // Enhanced analytics for BANKO AL - FIXED: Better NA handling
+    // Enhanced analytics for BANKO AL
     _banko_volAvg = ta.sma(volume, 20)
-    // Use nz() to avoid NA issues - if volAvg is 0 or NA, use volume as baseline
-    _banko_volRatio = nz(_banko_volAvg) == 0 ? (nz(volume) > 0 ? 1.0 : 0.0) : nz(volume) / nz(_banko_volAvg, 1)
-    _banko_rsi = nz(ta.rsi(close, 14), 50)  // Default to neutral 50 if NA
-    _banko_atr = nz(ta.atr(14), nz(close) * 0.02)  // Default to 2% of price if NA
-    _banko_atrPct = nz(close) == 0 ? 0.0 : (nz(_banko_atr) / nz(close)) * 100
+    _banko_volRatio = na(_banko_volAvg) or na(volume) ? na : volume / _banko_volAvg
+    _banko_rsi = ta.rsi(close, 14)
+    _banko_atr = ta.atr(14)
+    _banko_atrPct = na(_banko_atr) or na(close) ? na : (_banko_atr / close) * 100
     
     // Format Volume with percentage and category
     _banko_volText = ""
-    _banko_volPct = ((_banko_volRatio - 1.0) * 100)
-    _banko_volPctStr = (_banko_volPct >= 0 ? "+" : "") + str.tostring(_banko_volPct, "#") + "%"
-    _banko_volText := _banko_volRatio > 1.5 ? "GÜÇLÜ (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 1.0 ? "VAR (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 0.8 ? "ORTA (" + _banko_volPctStr + ") ⚠️" : "ZAYIF (" + _banko_volPctStr + ") ❌"
+    if na(_banko_volRatio)
+        _banko_volText := "Veri yok"
+    else
+        _banko_volPct = ((_banko_volRatio - 1.0) * 100)
+        _banko_volPctStr = (_banko_volPct >= 0 ? "+" : "") + str.tostring(_banko_volPct, "#") + "%"
+        _banko_volText := _banko_volRatio > 1.5 ? "GÜÇLÜ (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 1.0 ? "VAR (" + _banko_volPctStr + ") ✅" : _banko_volRatio > 0.8 ? "ORTA (" + _banko_volPctStr + ") ⚠️" : "ZAYIF (" + _banko_volPctStr + ") ❌"
     
-    // Format Momentum - Now always has value
-    _banko_rsiDir = _banko_rsi > nz(_banko_rsi[1], 50) ? "↑" : _banko_rsi < nz(_banko_rsi[1], 50) ? "↓" : "→"
-    _banko_momText = _banko_rsi > 60 ? "GÜÇLÜ (RSI " + str.tostring(_banko_rsi, "#") + " " + _banko_rsiDir + ") ✅" : _banko_rsi > 50 ? "ORTA (RSI " + str.tostring(_banko_rsi, "#") + " " + _banko_rsiDir + ") ⚠️" : "ZAYIF (RSI " + str.tostring(_banko_rsi, "#") + " " + _banko_rsiDir + ") ❌"
+    // Format Momentum
+    _banko_momText = na(_banko_rsi) ? "Hesaplanıyor" : (_banko_rsi > 60 ? "GÜÇLÜ (RSI " + str.tostring(_banko_rsi, "#") + " " + (_banko_rsi > _banko_rsi[1] ? "↑" : "↓") + ") ✅" : _banko_rsi > 50 ? "ORTA (RSI " + str.tostring(_banko_rsi, "#") + " →) ⚠️" : "ZAYIF (RSI " + str.tostring(_banko_rsi, "#") + " ↓) ❌")
     
-    // Format Volatility - Now always has value
-    _banko_volText2 = _banko_atrPct > 4.0 ? "YÜKSEK (" + str.tostring(_banko_atrPct, "#.#") + "%) ⚡" : _banko_atrPct > 2.0 ? "ORTA (" + str.tostring(_banko_atrPct, "#.#") + "%) 📊" : "DÜŞÜK (" + str.tostring(_banko_atrPct, "#.#") + "%) 😴"
+    // Format Volatility
+    _banko_volText2 = na(_banko_atrPct) ? "Hesaplanıyor" : (_banko_atrPct > 4.0 ? "YÜKSEK ⚡" : _banko_atrPct > 2.0 ? "ORTA 📊" : "DÜŞÜK 😴")
     
-    // Calculate strength grade - Now always calculates (no NA checks needed)
+    // Calculate strength grade
     _banko_score = 0
-    if _banko_volRatio > 2.0
-        _banko_score += 3
-    else if _banko_volRatio > 1.5
-        _banko_score += 2
-    else if _banko_volRatio > 1.2
-        _banko_score += 1
+    if not na(_banko_volRatio)
+        if _banko_volRatio > 2.0
+            _banko_score += 3
+        else if _banko_volRatio > 1.5
+            _banko_score += 2
+        else if _banko_volRatio > 1.2
+            _banko_score += 1
     
-    if _banko_rsi > 60
-        _banko_score += 2
-    else if _banko_rsi > 55
-        _banko_score += 1
+    if not na(_banko_rsi)
+        if _banko_rsi > 60
+            _banko_score += 2
+        else if _banko_rsi > 55
+            _banko_score += 1
     
-    if _banko_atrPct > 3.0
+    if not na(_banko_atrPct) and _banko_atrPct > 3.0
         _banko_score += 1
     
     _banko_grade = _banko_score >= 5 ? "A+ ⭐⭐⭐" : _banko_score >= 3 ? "B ⭐⭐" : "C ⭐"
@@ -1724,6 +2083,7 @@ if allowLInt_Confirmed
     [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("BANKO KESİŞME AL", "BANKO LONG INTERSECT", f_tf_label(timeframe.period))
 
 // ---
+// 14) MTF ST — Safe Boot ile
 // ---
 f_mtf_eval() =>
     _tr  = ta.tr(true)
@@ -1760,13 +2120,17 @@ f_mtf_eval() =>
     [_evBuy, _evSell, _evLInt, _evSInt, barstate.isconfirmed, time, close]
 
 sendMtf(tf, tfLabel, useTf)=>
+    // Skip if requested timeframe is not higher than chart timeframe
     if eff_mtf_enable and useTf and f_is_higher_tf(tf)
         [b_, s_, l_, k_, tfClosed, mtfTime, mtfClose] = request.security(syminfo.tickerid, tf, f_mtf_eval(), barmerge.gaps_off, barmerge.lookahead_off)
 
+        // tfClosed = request.security(syminfo.tickerid, tf, barstate.isconfirmed, barmerge.gaps_off, barmerge.lookahead_off)
         
+        // BANKO AL realtime: fire immediately when l_ is true (no tfClosed check)
         // Only for BANKO AL when mtf_only_banko is true
         bankoAlRealtime = mtf_only_banko and l_
         
+        // For non-BANKO mode or for SAT/flip events, wait for tfClosed as before
         if bankoAlRealtime or (tfClosed and (b_ or s_ or l_ or k_))
             buyLike = b_ or l_
             sellLike = s_ or k_
@@ -1775,6 +2139,7 @@ sendMtf(tf, tfLabel, useTf)=>
             if mtf_only_banko
                 if l_
                     evStrBuy := TXT_LINT
+                // k_ (BANKO SAT) should not be sent per user request
             else
                 if l_
                     evStrBuy := evStrBuy=="" ? TXT_LINT : evStrBuy + "; " + TXT_LINT
@@ -1785,6 +2150,8 @@ sendMtf(tf, tfLabel, useTf)=>
                 if s_
                     evStrSell := evStrSell=="" ? (etiketDil=="TR"?"SAT Flip":"Sell Flip") : evStrSell + "; " + (etiketDil=="TR"?"SAT Flip":"Sell Flip")
             
+            // BANKO AL alert with proper format: "K - BANKO KESİŞME AL (1H)"
+            // Only send when l_ (BANKO AL) is true in BANKO mode
             if mtf_only_banko and l_ and not buyBlockedByPct
                 // Use MTF bar time for deduplication instead of bar_index
                 // This prevents spam: same mtfTime = same HTF bar = single alert
@@ -1836,8 +2203,11 @@ sendMtf(tf, tfLabel, useTf)=>
                       (tfClosed ? "\n\n✅ Kesin sinyal - Bar kapatıldı" : "") +
                       prevNoteMtf
                 
+                // alert.freq_once_per_bar for realtime; dedup handled by send_event with mtfTime in id
+                // MTF BANKO alerts sent to dedicated chat ID
                 send_event(id, msg, telegramChatIdMtfBanko, alert.freq_once_per_bar)
                 [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("BANKO KESİŞME AL", "BANKO LONG INTERSECT", tfLabel)
+            // For non-BANKO mode, handle other events normally
             if not mtf_only_banko
                 if buyLike and not buyBlockedByPct and evStrBuy!=""
                     id = "MTF_ST_"+tfLabel+"_BUY_"+str.tostring(mtfTime)
@@ -1848,6 +2218,9 @@ sendMtf(tf, tfLabel, useTf)=>
                 // MTF SAT disabled to reduce tokens
                 // if sellLike and evStrSell!=""
                 //     id2 = "MTF_ST_"+tfLabel+"_SELL_"+str.tostring(mtfTime)
+                //     msg2 = (etiketDil=="TR"?"🔻 MTF SAT [" : "🔻 MTF SELL [") + syminfo.ticker + "] " + tfLabel + ": " + evStrSell + "\nFiyat: " + fmtMint(mtfClose)
+                //     send_event(id2, msg2, telegramChatIdSell, alert.freq_once_per_bar_close)
+            // Note: BANKO SAT (k_) intentionally not sent in BANKO mode per user request
 
 sendMtf("60","1H", mtf_use_1h)
 sendMtf("120","2H", mtf_use_2h)
@@ -1855,15 +2228,22 @@ sendMtf("240","4H", mtf_use_4h)
 sendMtf("D","1D", mtf_use_1d)
 
 // ---
+// 15) MODÜL-2 4H / 1D Mesajlar
 // ---
 build_pg_value_lines() =>
-    // Simplified after PG removal - just returns VWAP info
-    float vwap_val = nz(ta.vwap(hlc3))
-    string valueLine_tr = "\nVWAP: " + str.tostring(vwap_val, "#.##")
-    string valueLine_en = "\nVWAP: " + str.tostring(vwap_val, "#.##")
+    string valueLine_tr = ""
+    string valueLine_en = ""
+    if pg_va_mode=="MA+Bollinger"
+        valueLine_tr := "\nBB: " + (close > (ta.sma(pg_bb_src, pg_bb_length) + pg_bb_mult*ta.stdev(pg_bb_src, pg_bb_length)) ? "ÜST" : (close < (ta.sma(pg_bb_src, pg_bb_length) - pg_bb_mult*ta.stdev(pg_bb_src, pg_bb_length)) ? "ALT" : "İÇ"))
+        valueLine_en := "\nBB: " + (close > (ta.sma(pg_bb_src, pg_bb_length) + pg_bb_mult*ta.stdev(pg_bb_src, pg_bb_length)) ? "ABOVE" : (close < (ta.sma(pg_bb_src, pg_bb_length) - pg_bb_mult*ta.stdev(pg_bb_src, pg_bb_length)) ? "BELOW" : "IN"))
+    else
+        float pg_value_here = nz(ta.vwap(pg_vwap_source))
+        string pg_label_val = "VW"
+        valueLine_tr := "\nDeğer: " + pg_label_val + (not na(pg_value_here) ? "  Δ: " + str.tostring(close - pg_value_here, "#.####") : "")
+        valueLine_en := "\nValue: " + pg_label_val + (not na(pg_value_here) ? "  Δ: " + str.tostring(close - pg_value_here, "#.####") : "")
     [valueLine_tr, valueLine_en]
 
-
+// 4H — BUY BLOKLARI
 if eff_includeModule2
     if mt_sendCombinedAlerts and mt_buyAllowedCombined
         idB = "M2_4H_COMBINED_BUY_" + str.tostring(bar_index)
@@ -1875,8 +2255,8 @@ if eff_includeModule2
         techTR = "\nTEK\n" + techCtxM2
         techEN = "\nTECH\n" + techCtxM2
         prevNoteM2 = f_prev_bullish_note()
-        bodyTR = "\nFiyat: " + fmtMint(close) + tgTR + techTR + valTR + prevNoteM2
-        bodyEN = "\nPrice: " + fmtMint(close) + tgEN + techEN + valEN + prevNoteM2
+        bodyTR = "\nRAPOR\nFiyat: " + fmtMint(close) + tgTR + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTR:valEN) + techTR + prevNoteM2
+        bodyEN = "\nReport\nPrice: " + fmtMint(close) + tgEN + (unifiedIncludePG and eff_pg_enable ? ("\nPG\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTR:valEN) + techEN
         msgB = (etiketDil=="TR" ? hdrTR + bodyTR : hdrEN + bodyEN)
         send_event(idB, msgB, fChatId(true,false), alert.freq_once_per_bar_close)
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("M2 Kombine AL", "M2 Combined BUY", "4H")
@@ -1891,8 +2271,8 @@ if eff_includeModule2
         techTR2 = "\nTEK\n" + techCtxM2b
         techEN2 = "\nTECH\n" + techCtxM2b
         prevNoteM2b = f_prev_bullish_note()
-        bodyTR2 = "\nFiyat: " + fmtMint(close) + tgTR2 + techTR2 + valTR2 + prevNoteM2b
-        bodyEN2 = "\nPrice: " + fmtMint(close) + tgEN2 + techEN2 + valEN2 + prevNoteM2b
+        bodyTR2 = "\nRAPOR\nFiyat: " + fmtMint(close) + tgTR2 + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTR2:valEN2) + techTR2 + prevNoteM2b
+        bodyEN2 = "\nReport\nPrice: " + fmtMint(close) + tgEN2 + (unifiedIncludePG and eff_pg_enable ? ("\nPG\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTR2:valEN2) + techEN2
         msgB2 = (etiketDil=="TR" ? hdrTR2 + bodyTR2 : hdrEN2 + bodyEN2)
         send_event(idB2, msgB2, fChatId(true,false), alert.freq_once_per_bar_close)
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("M2 Onaylı AL", "M2 Confirmed BUY", "4H")
@@ -1907,8 +2287,8 @@ if eff_includeModule2
         techTR3 = "\nTEK\n" + techCtxM2c
         techEN3 = "\nTECH\n" + techCtxM2c
         prevNoteM2c = f_prev_bullish_note()
-        bodyTR3 = "\nFiyat: " + fmtMint(close) + tgTR3 + techTR3 + valTR3 + prevNoteM2c
-        bodyEN3 = "\nPrice: " + fmtMint(close) + tgEN3 + techEN3 + valEN3 + prevNoteM2c
+        bodyTR3 = "\nRAPOR\nFiyat: " + fmtMint(close) + tgTR3 + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTR3:valEN3) + techTR3 + prevNoteM2c
+        bodyEN3 = "\nReport\nPrice: " + fmtMint(close) + tgEN3 + (unifiedIncludePG and eff_pg_enable ? ("\nPG\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTR3:valEN3) + techEN3
         msgBC = (etiketDil=="TR" ? hdrTR3 + bodyTR3 : hdrEN3 + bodyEN3)
         send_event(idBC, msgBC, fChatId(true,false), alert.freq_once_per_bar_close)
 
@@ -1918,6 +2298,7 @@ if eff_includeModule2
         msgBE = (etiketDil=="TR" ? "⚠️ M2 ERKEN AL [" : "⚠️ M2 Early BUY [") + syminfo.ticker + "] [4H] — Fiyat: " + fmtMint(close) + prevNoteM2e
         send_event(idBE, msgBE, fChatId(true,false), alert.freq_once_per_bar)
 
+// 4H SELL
 if mt_sendCombinedAlerts and mt_sellAllowedCombined
     idS = "M2_4H_COMBINED_SELL_" + str.tostring(bar_index)
     [valTRs, valENs] = build_pg_value_lines()
@@ -1927,12 +2308,12 @@ if mt_sendCombinedAlerts and mt_sellAllowedCombined
     techCtxM2s = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs = "\nTEK:" + techCtxM2s
     techENs = "\nTECH:" + techCtxM2s
-    prevNoteM2s = ""  // No bearish note tracking (feature not implemented)
-    bodyTRs = "\nFiyat: " + fmtMint(close) + tgTRs + techTRs + valTRs + prevNoteM2s
-    bodyENs = "\nPrice: " + fmtMint(close) + tgENs + techENs + valENs + prevNoteM2s
+    bodyTRs = "\nP:" + fmtMint(close) + tgTRs + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTRs:valENs) + techTRs
+    bodyENs = "\nP:" + fmtMint(close) + tgENs + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTRs:valENs) + techENs
     msgS = (etiketDil=="TR" ? hdrTRs + bodyTRs : hdrENs + bodyENs)
     send_event(idS, msgS, fChatId(false,true), alert.freq_once_per_bar_close)
 
+// SELL — Onaylı
 if mt_sendConfirmedAlerts and mt_sellAllowedConf and not mt_sellAllowedCombined
     idS2 = "M2_4H_CONF_SELL_" + str.tostring(bar_index)
     [valTRs2, valENs2] = build_pg_value_lines()
@@ -1942,13 +2323,14 @@ if mt_sendConfirmedAlerts and mt_sellAllowedConf and not mt_sellAllowedCombined
     techCtxM2s2 = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs2 = "\nTEK:" + techCtxM2s2
     techENs2 = "\nTECH:" + techCtxM2s2
-    prevNoteM2s2 = ""  // No bearish note tracking (feature not implemented)
-    bodyTRs2 = "\nFiyat: " + fmtMint(close) + tgTRs2 + techTRs2 + valTRs2 + prevNoteM2s2
-    bodyENs2 = "\nPrice: " + fmtMint(close) + tgENs2 + techENs2 + valENs2 + prevNoteM2s2
+    bodyTRs2 = "\nP:" + fmtMint(close) + tgTRs2 + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTRs2:valENs2) + techTRs2
+    bodyENs2 = "\nP:" + fmtMint(close) + tgENs2 + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTRs2:valENs2) + techENs2
     msgS2 = (etiketDil=="TR" ? hdrTRs2 + bodyTRs2 : hdrENs2 + bodyENs2)
     send_event(idS2, msgS2, fChatId(false,true), alert.freq_once_per_bar_close)
 
+// 1D — BUY BLOKLARI
 if eff_includeModule2
+    // BUY — Kombine
     if mt_sendCombinedAlerts and mt_buyAllowedCombined1D
         idBD = "M2_1D_COMBINED_BUY_" + str.tostring(bar_index)
         [valTRd, valENd] = build_pg_value_lines()
@@ -1959,12 +2341,13 @@ if eff_includeModule2
         techTRd = "\nTEK:" + techCtxD
         techENd = "\nTECH:" + techCtxD
         prevNoteD = f_prev_bullish_note()
-        bodyTRd = "\nFiyat: " + fmtMint(close) + tgTRd + techTRd + valTRd + prevNoteD
-        bodyENd = "\nPrice: " + fmtMint(close) + tgENd + techENd + valENd + prevNoteD
+        bodyTRd = "\nP:" + fmtMint(close) + tgTRd + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTRd:valENd) + techTRd + prevNoteD
+        bodyENd = "\nP:" + fmtMint(close) + tgENd + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTRd:valENd) + techENd
         msgBD = (etiketDil=="TR" ? hdrTRd + bodyTRd : hdrENd + bodyENd)
         send_event(idBD, msgBD, fChatId(true,false), alert.freq_once_per_bar_close)
         [lastBullishTime, lastBullishPrice, lastBullishTextTR, lastBullishTextEN, lastBullishTF] = f_record_bullish("M2 Kombine AL", "M2 Combined BUY", "1D")
 
+    // BUY — Onaylı
     if mt_sendConfirmedAlerts and mt_buyAllowedConf1D and not mt_buyAllowedCombined1D
         idB2D = "M2_1D_CONF_BUY_" + str.tostring(bar_index)
         [valTR2d, valEN2d] = build_pg_value_lines()
@@ -1975,11 +2358,12 @@ if eff_includeModule2
         techTR2d = "\n--- TEK ---\n" + techCtxM2bd
         techEN2d = "\n--- TECH ---\n" + techCtxM2bd
         prevNoteM2bd = f_prev_bullish_note()
-        bodyTR2d = "\nFiyat: " + fmtMint(close) + tgTR2d + techTR2d + valTR2d + prevNoteM2bd
-        bodyEN2d = "\nPrice: " + fmtMint(close) + tgEN2d + techEN2d + valEN2d + prevNoteM2bd
+        bodyTR2d = "\nRAPOR\nP:" + fmtMint(close) + tgTR2d + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTR2d:valEN2d) + techTR2d + prevNoteM2bd
+        bodyEN2d = "\nReport\nP:" + fmtMint(close) + tgEN2d + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTR2d:valEN2d) + techEN2d
         msgB2D = (etiketDil=="TR" ? hdrTR2d + bodyTR2d : hdrEN2d + bodyEN2d)
         send_event(idB2D, msgB2D, fChatId(true,false), alert.freq_once_per_bar_close)
 
+    // BUY — Candle close
     if mt_sendCandleAlerts and mt_buyAllowedCandle1D
         idBCD = "M2_1D_CANDLE_BUY_" + str.tostring(bar_index)
         [valTR3d, valEN3d] = build_pg_value_lines()
@@ -1990,11 +2374,12 @@ if eff_includeModule2
         techTR3d = "\n--- TEK ---\n" + techCtxM2cd
         techEN3d = "\n--- TECH ---\n" + techCtxM2cd
         prevNoteM2cd = f_prev_bullish_note()
-        bodyTR3d = "\nFiyat: " + fmtMint(close) + tgTR3d + techTR3d + valTR3d + prevNoteM2cd
-        bodyEN3d = "\nPrice: " + fmtMint(close) + tgEN3d + techEN3d + valEN3d + prevNoteM2cd
+        bodyTR3d = "\nRAPOR\nP:" + fmtMint(close) + tgTR3d + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTR3d:valEN3d) + techTR3d + prevNoteM2cd
+        bodyEN3d = "\nReport\nP:" + fmtMint(close) + tgEN3d + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTR3d:valEN3d) + techEN3d
         msgBCD = (etiketDil=="TR" ? hdrTR3d + bodyTR3d : hdrEN3d + bodyEN3d)
         send_event(idBCD, msgBCD, fChatId(true,false), alert.freq_once_per_bar_close)
 
+// 1D SELL
 if mt_sendCombinedAlerts and mt_sellAllowedCombined1D
     idSD = "M2_1D_COMBINED_SELL_" + str.tostring(bar_index)
     [valTRsd, valENsd] = build_pg_value_lines()
@@ -2004,12 +2389,12 @@ if mt_sendCombinedAlerts and mt_sellAllowedCombined1D
     techCtxM2sd = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRsd = "\nTEK:" + techCtxM2sd
     techENsd = "\nTECH:" + techCtxM2sd
-    prevNoteM2sd = ""  // No bearish note tracking (feature not implemented)
-    bodyTRsd = "\nFiyat: " + fmtMint(close) + tgTRsd + techTRsd + valTRsd + prevNoteM2sd
-    bodyENsd = "\nPrice: " + fmtMint(close) + tgENsd + techENsd + valENsd + prevNoteM2sd
+    bodyTRsd = "\nP:" + fmtMint(close) + tgTRsd + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTRsd:valENsd) + techTRsd
+    bodyENsd = "\nP:" + fmtMint(close) + tgENsd + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTRsd:valENsd) + techENsd
     msgSD = (etiketDil=="TR" ? hdrTRsd + bodyTRsd : hdrENsd + bodyENsd)
     send_event(idSD, msgSD, fChatId(false,true), alert.freq_once_per_bar_close)
 
+// SELL — Onaylı (1D)
 if mt_sendConfirmedAlerts and mt_sellAllowedConf1D and not mt_sellAllowedCombined1D
     idS2D = "M2_1D_CONF_SELL_" + str.tostring(bar_index)
     [valTRs2d, valENs2d] = build_pg_value_lines()
@@ -2019,13 +2404,13 @@ if mt_sendConfirmedAlerts and mt_sellAllowedConf1D and not mt_sellAllowedCombine
     techCtxM2s2d = tech_ctx_for_unified_buy != "" ? tech_ctx_for_unified_buy : f_quick_tech_ctx()
     techTRs2d = "\nTEK:" + techCtxM2s2d
     techENs2d = "\nTECH:" + techCtxM2s2d
-    prevNoteM2s2d = ""  // No bearish note tracking (feature not implemented)
-    bodyTRs2d = "\nFiyat: " + fmtMint(close) + tgTRs2d + techTRs2d + valTRs2d + prevNoteM2s2d
-    bodyENs2d = "\nPrice: " + fmtMint(close) + tgENs2d + techENs2d + valENs2d + prevNoteM2s2d
+    bodyTRs2d = "\nP:" + fmtMint(close) + tgTRs2d + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_TR) : "") + (etiketDil=="TR"?valTRs2d:valENs2d) + techTRs2d
+    bodyENs2d = "\nP:" + fmtMint(close) + tgENs2d + (unifiedIncludePG and eff_pg_enable ? ("\nPG:\n" + PG_CTX_EN) : "") + (etiketDil=="TR"?valTRs2d:valENs2d) + techENs2d
     msgS2D = (etiketDil=="TR" ? hdrTRs2d + bodyTRs2d : hdrENs2d + bodyENs2d)
     send_event(idS2D, msgS2D, fChatId(false,true), alert.freq_once_per_bar_close)
 
 // ---
+// 16) VISUAL LABELS + ALERT CONDITIONS
 // ---
 if showSTSignals and buySignal and entryConfirmed(true) and htfOkLongLabel
     label.new(bar_index, stUp, TXT_BUY, style=label.style_label_up, color=color.new(color.green,0), textcolor=color.white)
@@ -2038,10 +2423,16 @@ if shortIntersectLabel and entryConfirmed(true)
 
 // SQZ görsel işaretler (kapalı - token tasarrufu)
 // plotshape(sqz_enable and sqzOff and (sqz_val>0),  title="SQZ L", style=shape.circle, location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny)
+// plotshape(sqz_enable and sqzOff and (sqz_val<0),  title="SQZ S", style=shape.circle, location=location.abovebar, color=color.new(color.red, 0),  size=size.tiny)
 
 // ---
+// DT MODÜLÜ — Çift / Üçlü Dip–Tepe + MOST (saf ek analiz)
+// Kaynak: ikiliucludipmitmovearesat.txt (v6'dan v5'e port)
+// Hiçbir mevcut V61 ayarını DEĞİŞTİRMEZ, sadece ekler.
 // ---
 
+//----------------------------------------------------
+// DT Inputs (formasyon + MOST)
 //----------------------------------------------------
 grpDT = "DT — Çift/Üçlü Dip & Tepe + MOST"
 
@@ -2056,6 +2447,7 @@ if dt_enable
     dt_atr = ta.atr(14)
     dt_pl = ta.pivotlow(close, dt_x, dt_x)
     
+    // Double bottom detection
     if not na(dt_pl)
         _lookback = 30
         _bottomCount = 0
@@ -2072,6 +2464,7 @@ if dt_enable
 else
     dt_confDB := false
 
+// DT Label and Telegram Alert (Çift Dip only)
 if dt_enable and dt_confDB and barstate.isconfirmed
     label.new(bar_index, low, "Çift Dip AL", style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white, size=size.small)
     dt_msg = "DT ÇİFT DİP AL|" + syminfo.ticker + "|TF=" + timeframe.period + "|Fiyat=" + str.tostring(close, "#.##")
@@ -2080,6 +2473,7 @@ if dt_enable and dt_confDB and barstate.isconfirmed
 alertcondition(dt_confDB and dt_enable, title="DT Çift Dip AL", message="DT Çift Dip AL onaylandı.")
 
 // ---
+// FO — Forecast Oscillator BUY-only Alert Module
 // ---
 grpFO = "FO — Forecast Oscillator"
 fo_enable            = input.bool(true, "FO Module Enable", group=grpFO)  // Changed to true - enable by default
@@ -2146,6 +2540,7 @@ if fo_enable
     // 9. Confirm on Close (optional)
     fo_finalSignal := fo_confirm_on_close ? (fo_signal and barstate.isconfirmed) : fo_signal
     
+    // 10. Update Cooldown
     if fo_finalSignal
         fo_lastSignalBar := bar_index
     
@@ -2166,11 +2561,13 @@ if fo_enable
     fo_target1 = math.max(fo_target1_r, fo_target1_pct)
     fo_target2 = math.max(fo_target2_r, fo_target2_pct)
     
+    // Round to mintick if enabled
     if fo_round_to_mintick
         fo_stop := math.round(fo_stop / syminfo.mintick) * syminfo.mintick
         fo_target1 := math.round(fo_target1 / syminfo.mintick) * syminfo.mintick
         fo_target2 := math.round(fo_target2 / syminfo.mintick) * syminfo.mintick
     
+    // 12. Build Alert Message with Volume Info
     if fo_finalSignal
         fo_volRatio = volume / fo_volSma
         fo_volInfo = fo_volOK ? "" : " VOL:ZAYIF(" + str.tostring(fo_volRatio, "#.##") + "x)"
@@ -2193,6 +2590,7 @@ else
     fo_risk := 0.0
 
 // =========================================================================
+// HAFTALIK AL — Weekly/Monthly High-Return Signal Module
 // Medium-term signals for stocks with clear path up and high return potential
 // =========================================================================
 grpHAFTA = "HAFTALIK AL — Orta Vade Yüksek Getiri"
@@ -2237,67 +2635,29 @@ if hafta_enable
     hafta_ema = ta.ema(hafta_c, hafta_trendLen)
     hafta_trendUp = hafta_c > hafta_ema and hafta_ema > hafta_ema[1]
     
-    // 3. RSI filter - improved for better entry timing
+    // 3. RSI filter - strong momentum
     hafta_rsi = ta.rsi(hafta_c, hafta_rsiLen)
-    hafta_rsiOK = hafta_rsi >= 50 and hafta_rsi <= 70  // Not overbought
-    hafta_rsiRising = hafta_rsi > hafta_rsi[1]  // Momentum building
+    hafta_rsiOK = hafta_rsi >= hafta_rsiMin and hafta_rsi < 80
     
-    // 4. Volume confirmation with accumulation detection
+    // 4. Volume confirmation
     hafta_volAvg = ta.sma(hafta_v, 20)
     hafta_volOK = hafta_v > hafta_volAvg * hafta_volMultiple
-    // Volume pattern: more volume on up days = accumulation
-    hafta_upVol = hafta_c > hafta_c[1] ? hafta_v : 0.0
-    hafta_dnVol = hafta_c < hafta_c[1] ? hafta_v : 0.0
-    hafta_upVolAvg = ta.sma(hafta_upVol, 5)
-    hafta_dnVolAvg = ta.sma(hafta_dnVol, 5)
-    hafta_isAccumulating = hafta_dnVolAvg > 0 ? hafta_upVolAvg / hafta_dnVolAvg > 1.3 : true
     
     // 5. Price action - strong close near high
     hafta_range = hafta_h - hafta_l
     hafta_closeStrength = hafta_range > 0 ? (hafta_c - hafta_l) / hafta_range : 0
     hafta_strongClose = hafta_closeStrength > 0.7  // Close in top 30%
     
-    // 6. Pullback detection - buy dips, not tops (NEW - CRITICAL)
-    hafta_recentHigh = ta.highest(hafta_h, 10)  // Last 10 bars high
-    hafta_pullbackPct = hafta_recentHigh > 0 ? ((hafta_recentHigh - hafta_c) / hafta_recentHigh) * 100 : 0
-    hafta_isPullback = hafta_pullbackPct >= 2.0 and hafta_pullbackPct <= 20.0  // 2-20% pullback
-    
-    // 7. Support level entry - near support for better risk/reward (NEW)
-    hafta_support = ta.lowest(hafta_l, hafta_resistLookback)
-    hafta_distToSupport = hafta_support > 0 ? ((hafta_c - hafta_support) / hafta_support) * 100 : 100
-    hafta_nearSupport = hafta_distToSupport <= 8.0  // Within 8% of support
-    
-    // 8. Squeeze detection - low volatility = imminent move (NEW)
-    hafta_bb_basis = ta.sma(hafta_c, 20)
-    hafta_bb_dev = ta.stdev(hafta_c, 20)
-    hafta_bb_width = hafta_bb_basis > 0 and hafta_bb_dev > 0 ? (hafta_bb_dev / hafta_bb_basis) * 100 : 0
-    hafta_bb_widthAvg = ta.sma(hafta_bb_width, 20)
-    hafta_isSqueezed = hafta_bb_widthAvg > 0 ? hafta_bb_width < hafta_bb_widthAvg * 0.75 : false  // Tight range
-    
-    // 9. Momentum confirmation - higher lows structure (NEW)
-    hafta_higherLow = hafta_l > hafta_l[1] and hafta_l[1] > hafta_l[2]
-    hafta_recentGain = hafta_c[3] > 0 ? ((hafta_c - hafta_c[3]) / hafta_c[3]) * 100 : 0
-    hafta_hasStrength = hafta_recentGain >= 1.5  // At least 1.5% in 3 bars
-    
-    // 10. Breakout or clear path
+    // 6. Breakout or clear path
     hafta_highest = ta.highest(hafta_h, hafta_resistLookback)
     hafta_isBreakout = hafta_c >= hafta_highest * 0.98  // Within 2% of high
     hafta_clearPath = not hafta_hasResist or hafta_isBreakout
     
-    // 11. Cooldown check
+    // 7. Cooldown check
     hafta_cooldownOK = na(hafta_lastBar) or (bar_index - hafta_lastBar) >= hafta_cooldown
     
-    // ENHANCED FILTER COMBINATION - More selective for better entries and quick movement
-    // Core filters (must have)
-    hafta_coreFilters = hafta_trendUp and hafta_rsiOK and hafta_rsiRising and hafta_volOK and hafta_strongClose and hafta_cooldownOK
-    // Entry quality filters (at least 1 must be true for good entry)
-    hafta_goodEntry = hafta_isPullback or hafta_nearSupport
-    // Movement prediction filters (at least 1 must be true for quick move)
-    hafta_readyToMove = hafta_isAccumulating or hafta_isSqueezed or (hafta_higherLow and hafta_hasStrength)
-    // Path must be clear
-    hafta_pathOK = hafta_clearPath
-    // Combine all
-    hafta_allFilters = hafta_coreFilters and hafta_goodEntry and hafta_readyToMove and hafta_pathOK
+    // Combine all filters
+    hafta_allFilters = hafta_trendUp and hafta_rsiOK and hafta_volOK and hafta_strongClose and hafta_clearPath and hafta_cooldownOK
     
     // Signal confirmed on bar close
     hafta_signal := hafta_allFilters and barstate.isconfirmed
@@ -2309,31 +2669,16 @@ if hafta_enable
         hafta_tp2 = hafta_c * (1 + hafta_tp2Pct / 100)
         hafta_pathStatus = hafta_isBreakout ? "BREAKOUT" : (hafta_hasResist ? "RESIST @" + str.tostring(hafta_resistLevel, "#.##") : "CLEAR PATH")
         hafta_tfLabel = hafta_timeframe == "W" ? "HAFTALIK" : hafta_timeframe == "M" ? "AYLIK" : "2HAFTA"
-        // Enhanced message with entry quality and movement indicators
-        hafta_entryInfo = hafta_isPullback ? "PULLBACK -" + str.tostring(hafta_pullbackPct, "#.#") + "%" : hafta_nearSupport ? "SUPPORT +" + str.tostring(hafta_distToSupport, "#.#") + "%" : "ENTRY"
-        hafta_moveSignal = hafta_isSqueezed ? "SQUEEZE" : hafta_isAccumulating ? "ACCUM" : hafta_higherLow ? "HL-MOMENTUM" : "READY"
-        
-        // Multi-line readable message format
-        hafta_msg = "🚀 " + hafta_tfLabel + " AL [" + syminfo.ticker + "]\n"
-        hafta_msg += hafta_entryInfo + "\n\n"
-        hafta_msg += "📊 GİRİŞ: " + str.tostring(hafta_c, "#.##") + "\n"
-        hafta_msg += "🛑 STOP: " + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)\n"
-        hafta_msg += "🎯 TP1: " + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)\n"
-        hafta_msg += "🎯 TP2: " + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)\n\n"
-        hafta_msg += "📈 RSI: " + str.tostring(hafta_rsi, "#") + "\n"
-        hafta_msg += "📊 HACIM: " + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x\n"
-        hafta_msg += "✅ " + hafta_pathStatus + "\n"
-        if hafta_moveSignal != "READY"
-            hafta_msg += "🔥 " + hafta_moveSignal
-        
+        hafta_msg = "🚀 " + hafta_tfLabel + " AL|" + syminfo.ticker + "|E=" + str.tostring(hafta_c, "#.##") + "|SL=" + str.tostring(hafta_stop, "#.##") + " (-" + str.tostring(hafta_slPct, "#.#") + "%)|TP1=" + str.tostring(hafta_tp1, "#.##") + " (+" + str.tostring(hafta_tp1Pct, "#") + "%)|TP2=" + str.tostring(hafta_tp2, "#.##") + " (+" + str.tostring(hafta_tp2Pct, "#") + "%)|RSI=" + str.tostring(hafta_rsi, "#") + "|" + hafta_pathStatus + "|VOL=" + str.tostring(hafta_v / hafta_volAvg, "#.#") + "x"
         hafta_chatId = hafta_chat_id == "" ? telegramChatIdBuy : hafta_chat_id
         send_event("HAFTA_BUY_" + str.tostring(hafta_t), hafta_msg, hafta_chatId, alert.freq_once_per_bar_close)
-        label.new(bar_index, low, hafta_tfLabel + " AL\n" + hafta_entryInfo, style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.normal)
+        label.new(bar_index, low, hafta_tfLabel + " AL", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.normal)
 else
     hafta_signal := false
 
 // ---
 // TURBO AL — High-Momentum Entry System for BIST (1-3 day, +10% target)
+// Volume Explosion + Momentum + Breakout = Quick moves
 // ---
 grpTURBO = "TURBO AL — Momentum Entry"
 turbo_enable        = input.bool(true, "TURBO AL Module Enable", group=grpTURBO)  // Changed to true - enable by default
@@ -2366,8 +2711,8 @@ if turbo_enable and not safeBoot
     turbo_ema21 = ta.ema(close, turbo_emaLen)
     turbo_momentumFilter = turbo_rsiCross and turbo_rsi7 > turbo_rsi7Thresh and close > turbo_ema21
     
-    // Filter 3: Price Breakout (fixed: exclude current bar to avoid self-fulfilling signal)
-    turbo_highestHigh = ta.highest(high, turbo_breakoutLen)[1]  // [1] excludes current bar
+    // Filter 3: Price Breakout
+    turbo_highestHigh = ta.highest(high, turbo_breakoutLen)[1]
     turbo_atr = ta.atr(turbo_atrLen)
     turbo_range = high - low
     turbo_breakoutFilter = close > turbo_highestHigh and close > open and turbo_range > 1.5 * turbo_atr
@@ -2376,6 +2721,7 @@ if turbo_enable and not safeBoot
     turbo_cooldownOK = bar_index - turbo_lastSignalBar >= turbo_cooldown
     turbo_signal := turbo_volFilter and turbo_momentumFilter and turbo_breakoutFilter and turbo_cooldownOK and barstate.isconfirmed
     
+    // Calculate risk levels when signal fires
     if turbo_signal
         turbo_lastSignalBar := bar_index
         
@@ -2426,6 +2772,8 @@ else
 plotshape(turbo_signal, "🚀 TURBO", style=shape.labelup, location=location.belowbar, color=color.new(color.orange, 0), size=size.small, text="TURBO", textcolor=color.white)
 
 // ---
+// TURBO INTRA 2H — 2-Hour Intraday Momentum Entry (Loosened)
+// Target: +6% in 2-12 hours, Optimized for frequent intraday signals
 // ---
 grpTURBO2H = "TURBO INTRA 2H — Intraday Entry"
 
@@ -2460,8 +2808,8 @@ if turbo2h_enable and not safeBoot
     turbo2h_ema = ta.ema(close, turbo2h_emaLen)
     turbo2h_momentumFilter = turbo2h_rsi > 50 and turbo2h_rsi7 > turbo2h_rsi7Thresh and close > turbo2h_ema
     
-    // Breakout filter (7-bar lookback, fixed: exclude current bar)
-    turbo2h_highest = ta.highest(high, turbo2h_breakoutLen)[1]  // [1] excludes current bar
+    // Breakout filter (7-day lookback)
+    turbo2h_highest = ta.highest(high, turbo2h_breakoutLen)[1]
     turbo2h_atr = ta.atr(turbo2h_atrLen)
     turbo2h_breakoutFilter = close > turbo2h_highest and close > open and (high - low) > 1.3 * turbo2h_atr
     
@@ -2479,6 +2827,7 @@ if turbo2h_enable and not safeBoot
     turbo2h_slPct = ((turbo2h_entry - turbo2h_sl) / turbo2h_entry) * 100
     turbo2h_rr1 = turbo2h_tp1Pct / turbo2h_slPct
     
+    // Send alert
     if turbo2h_signal
         turbo2h_lastSignalBar := bar_index
         
@@ -2504,6 +2853,7 @@ if turbo2h_enable and not safeBoot
         turbo2h_eventId = "TURBO2H_" + syminfo.ticker + "_" + str.tostring(time)
         turbo2h_chatToUse = turbo2h_chat_id != "" ? turbo2h_chat_id : telegramChatId
         
+        // Send event
         send_event(turbo2h_eventId, turbo2h_msg, turbo2h_chatToUse, alert.freq_once_per_bar_close)
 else
     turbo2h_signal := false
@@ -2513,6 +2863,8 @@ plotshape(turbo2h_enable and turbo2h_signal, "🚀 TURBO 2H", style=shape.labelu
 
 // ---
 // ---
+// AT — AlphaTrend Confirmed BUY Module with Historical Performance Gate
+// REFACTORED: Fix MTF evaluation bug, implement win-rate gate
 // ---
 grpAT = "AT — AlphaTrend Confirmed BUY"
 enableAlphaPerf      = input.bool(true, "AT Module Enable", group=grpAT)  // Changed to true - enable by default
@@ -2534,9 +2886,14 @@ alpha_allowHistoricalAlerts = input.bool(false, "AT Allow Historical Alerts", gr
 // =========================================================================
 // AT — AlphaTrend Engine Function (runs in HTF context)
 // =========================================================================
+// This function runs inside request.security(), meaning it executes in the
+// HTF context (4H or 1D). All evaluation logic must be here to use HTF data.
+//
+// Returns: [AlphaTrend, confirmedBuy, entryPrice, signalTime, gatePass, 
 //           samples, wins, winRate, lastOutcome]
 // =========================================================================
-f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, histMinSamples, histWinRateMin, histMaxSamples, gateWhenInsufficient) =>
+f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, 
+            histMinSamples, histWinRateMin, histMaxSamples, gateWhenInsufficient) =>
     
     // ===== 1. Calculate AlphaTrend Signal (same as before) =====
     _ATR = ta.sma(ta.tr, AP)
@@ -2584,10 +2941,11 @@ f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, histMinSamples,
             // Calculate run-up percentage
             _runUpPct = (_evalMaxHigh / _evalEntry - 1) * 100.0
             
+            // Add to history (most recent first)
             array.unshift(_history, _runUpPct)
             
-            // Array size limit (memory optimization - max 50 samples)
-            while array.size(_history) > math.min(histMaxSamples, 50)
+            // Trim to max samples
+            while array.size(_history) > histMaxSamples
                 array.pop(_history)
             
             // Reset evaluation state
@@ -2599,6 +2957,7 @@ f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, histMinSamples,
     _samples = array.size(_history)
     _wins = 0
     
+    // Count wins
     if _samples > 0
         for i = 0 to _samples - 1
             if array.get(_history, i) >= targetPct
@@ -2625,6 +2984,7 @@ f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, histMinSamples,
     // ===== 6. Prepare Return Values =====
     _lastOutcome = _samples > 0 ? array.get(_history, 0) : na
     
+    // Return tuple with all needed data
     [_AlphaTrend, _confirmedBuy, _entryPrice, _signalTime, 
      _gatePass, _samples, _wins, _winRate, _lastOutcome]
 
@@ -2632,11 +2992,15 @@ f_at_engine(tfKey, coeff, AP, novolumedata, evalBars, targetPct, histMinSamples,
 // Main AlphaTrend Logic
 // =========================================================================
 
+// Skip module if safeBoot or not enabled
 if enableAlphaPerf and not safeBoot
     
     // -------------------------
+    // MTF retrieval for 4H
     // -------------------------
-    [at4h_AT, at4h_confBuy, at4h_entry, at4h_time, at4h_gatePass, at4h_samples, at4h_wins, at4h_winRate, at4h_lastOutcome] =   request.security(syminfo.tickerid, "240", 
+    [at4h_AT, at4h_confBuy, at4h_entry, at4h_time, 
+     at4h_gatePass, at4h_samples, at4h_wins, at4h_winRate, at4h_lastOutcome] = 
+        request.security(syminfo.tickerid, "240", 
                          f_at_engine("4H", alpha_coeff, alpha_AP, alpha_novolumedata,
                                      alpha_evalBars_4h, alpha_targetPct,
                                      alpha_histMinSamples, alpha_histWinRateMin,
@@ -2644,8 +3008,11 @@ if enableAlphaPerf and not safeBoot
                          barmerge.gaps_off, barmerge.lookahead_off)
     
     // -------------------------
+    // MTF retrieval for 1D
     // -------------------------
-    [at1d_AT, at1d_confBuy, at1d_entry, at1d_time, at1d_gatePass, at1d_samples, at1d_wins, at1d_winRate, at1d_lastOutcome] = request.security(syminfo.tickerid, "D", 
+    [at1d_AT, at1d_confBuy, at1d_entry, at1d_time,
+     at1d_gatePass, at1d_samples, at1d_wins, at1d_winRate, at1d_lastOutcome] = 
+        request.security(syminfo.tickerid, "D", 
                          f_at_engine("1D", alpha_coeff, alpha_AP, alpha_novolumedata,
                                      alpha_evalBars_1d, alpha_targetPct,
                                      alpha_histMinSamples, alpha_histWinRateMin,
@@ -2653,8 +3020,10 @@ if enableAlphaPerf and not safeBoot
                          barmerge.gaps_off, barmerge.lookahead_off)
     
     // -------------------------
+    // 4H Alert Processing
     // -------------------------
     if alpha_sendOn == "4H" or alpha_sendOn == "Both"
+        // Signal found AND gate passes
         if at4h_confBuy and at4h_gatePass and not na(at4h_entry)
             // Build message
             _winRateStr = str.tostring(at4h_winRate * 100, "#.#")
@@ -2677,8 +3046,10 @@ if enableAlphaPerf and not safeBoot
             send_event(_eventId, _fullMsg, _at_chatId, alert.freq_once_per_bar_close)
     
     // -------------------------
+    // 1D Alert Processing
     // -------------------------
     if alpha_sendOn == "1D" or alpha_sendOn == "Both"
+        // Signal found AND gate passes
         if at1d_confBuy and at1d_gatePass and not na(at1d_entry)
             // Build message
             _winRateStr = str.tostring(at1d_winRate * 100, "#.#")
@@ -2701,11 +3072,13 @@ if enableAlphaPerf and not safeBoot
             send_event(_eventId, _fullMsg, _at_chatId, alert.freq_once_per_bar_close)
     
     // -------------------------
+    // Debug Mode (optional)
     // -------------------------
     if alpha_debug
         var table debugTable = table.new(position.top_right, 3, 16, 
                                           border_width=1, border_color=color.gray)
         
+        // Header
         table.cell(debugTable, 0, 0, "AlphaTrend Debug", 
                    text_color=color.white, bgcolor=color.blue, text_size=size.normal)
         table.merge_cells(debugTable, 0, 0, 2, 0)
@@ -2738,6 +3111,7 @@ if enableAlphaPerf and not safeBoot
         _lo4hStr = not na(at4h_lastOutcome) ? "+" + str.tostring(at4h_lastOutcome, "#.#") + "%" : "N/A"
         table.cell(debugTable, 1, 7, _lo4hStr, text_size=size.small)
         
+        // Warning if insufficient
         if at4h_samples < alpha_histMinSamples
             table.cell(debugTable, 0, 8, "⚠️ Insufficient", 
                        text_color=color.orange, bgcolor=color.new(color.yellow, 85), text_size=size.tiny)
@@ -2772,7 +3146,9 @@ if enableAlphaPerf and not safeBoot
         _lo1dStr = not na(at1d_lastOutcome) ? "+" + str.tostring(at1d_lastOutcome, "#.#") + "%" : "N/A"
         table.cell(debugTable, 1, 15, _lo1dStr, text_size=size.small)
         
+        // Warning if insufficient
         if at1d_samples < alpha_histMinSamples
+            // Use column 2 for 1D warning
             table.cell(debugTable, 2, 9, "⚠️ Insuff.", 
                        text_color=color.orange, bgcolor=color.new(color.yellow, 85), text_size=size.tiny)
             _warn1d = str.tostring(at1d_samples) + "/" + str.tostring(alpha_histMinSamples)
@@ -2796,6 +3172,7 @@ alertcondition(trailMoved, title="Trail Stop Yükseldi")
 
 // SQZ bağımsız sinyal alarmları (Signal modu)
 alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val > 0), title="SQZ Long Release")
+// alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] and (sqz_val < 0), title="SQZ Short Release")
 
 // FO Forecast Oscillator BUY signal
 alertcondition(fo_finalSignal and fo_risk > 0, title="FO BUY Signal", message="Forecast Oscillator BUY signal fired")
