@@ -2382,12 +2382,15 @@ fo_round_to_mintick  = input.bool(true, "FO Round to mintick", group=grpFO)
 // ---
 // HAF — HAFTALIK AL (Weekly Buy) Module
 // ---
-grpHAF      = "HAF — HAFTALIK AL"
-haf_enable  = input.bool(false, "HAF Aktif", group=grpHAF)
-haf_chatId  = input.string("", "HAF chat_id", group=grpHAF)
-haf_rsiMin  = input.float(55.0, "HAF RSI Min", step=0.5, group=grpHAF)
-haf_volMult = input.float(1.5, "HAF Vol", step=0.1, minval=0.1, group=grpHAF)
-haf_cdBars  = input.int(10, "HAF Cooldown", minval=0, group=grpHAF)
+grpHAF = "HAF — HAFTALIK AL"
+haf_enable       = input.bool(false, "HAFTALIK AL Modülü Aktif", group=grpHAF)
+haf_chat_id      = input.string("", "HAF Telegram chat_id (boş=DEFAULT)", group=grpHAF)
+haf_emaLen       = input.int(50,  "HAF EMA Trend Uzunluğu", minval=1, group=grpHAF)
+haf_rsiLen       = input.int(14,  "HAF RSI Uzunluğu", minval=1, group=grpHAF)
+haf_rsiMin       = input.float(55.0, "HAF RSI Min Eşiği", step=0.5, group=grpHAF)
+haf_volLen       = input.int(20,  "HAF Hacim SMA Uzunluğu", minval=1, group=grpHAF)
+haf_volMult      = input.float(1.5, "HAF Hacim Çarpanı", step=0.1, minval=0.1, group=grpHAF)
+haf_cooldownBars = input.int(10, "HAF Cooldown (bar)", minval=0, group=grpHAF)
 
 //----------------------------------------------------
 // Preset uygula (Auto) — sadece DT formasyon kısmı
@@ -2844,16 +2847,30 @@ if fo_finalSignal and fo_risk > 0
 //----------------------------------------------------
 // HAF — HAFTALIK AL (Weekly Buy) Implementation
 //----------------------------------------------------
-var int haf_lb = na
-haf_e50 = ta.ema(close, 50)
-haf_rsi = ta.rsi(close, 14)
-haf_vsm = ta.sma(volume, 20)
-haf_hl  = high - low
-haf_h20 = ta.highest(high, 20)
-haf_sig = haf_enable and close > haf_e50 and haf_e50 > haf_e50[1] and haf_rsi >= haf_rsiMin and volume > haf_volMult * haf_vsm and (haf_hl > 0 ? (close - low) / haf_hl >= 0.70 : true) and (haf_h20 - close) / close <= 0.03 and (na(haf_lb) or bar_index - haf_lb >= haf_cdBars) and barstate.isconfirmed
-if haf_sig
-    haf_lb := bar_index
-    send_event("HAF_" + str.tostring(bar_index), "HAF_AL|" + syminfo.ticker + "|" + f_tf_label(timeframe.period) + "|RSI=" + str.tostring(haf_rsi, "#.#"), haf_chatId == "" ? telegramChatId : haf_chatId, alert.freq_once_per_bar_close)
+var int haf_lastBar = na
+
+// Core filters
+haf_ema50       = ta.ema(close, haf_emaLen)
+haf_trendUp     = close > haf_ema50 and haf_ema50 > haf_ema50[1]
+haf_rsi         = ta.rsi(close, haf_rsiLen)
+haf_rsiOK       = haf_rsi >= haf_rsiMin
+haf_volSma      = ta.sma(volume, haf_volLen)
+haf_volOK       = volume > haf_volMult * haf_volSma
+haf_hl          = high - low
+haf_strongClose = haf_hl > 0 ? (close - low) / haf_hl >= 0.70 : true
+haf_recent20H   = ta.highest(high, 20)
+haf_clearPath   = (haf_recent20H - close) / close <= 0.03
+haf_cooldownOK  = na(haf_lastBar) or (bar_index - haf_lastBar) >= haf_cooldownBars
+
+// Combine 6 core filters
+haf_signal = haf_enable and haf_trendUp and haf_rsiOK and haf_volOK and haf_strongClose and haf_clearPath and haf_cooldownOK and barstate.isconfirmed
+
+// Send alert
+if haf_signal
+    haf_lastBar := bar_index
+    haf_msg = "HAF_AL|" + syminfo.ticker + "|TF=" + f_tf_label(timeframe.period) + "|RSI=" + str.tostring(haf_rsi, "#.#")
+    haf_chatId = haf_chat_id == "" ? telegramChatId : haf_chat_id
+    send_event("HAF_BUY_" + str.tostring(bar_index), haf_msg, haf_chatId, alert.freq_once_per_bar_close)
 
 alertcondition(dt_confDB, title="DT Çift Dip Onaylandı", message="DT Çift Dip onaylı kırılım.")
 alertcondition(dt_confDT, title="DT Çift Tepe Onaylandı", message="DT Çift Tepe onaylı kırılım.")
@@ -2877,4 +2894,4 @@ alertcondition(sqz_enable and (sqz_mode=="Signal") and sqzOff and not sqzOff[1] 
 alertcondition(fo_finalSignal and fo_risk > 0, title="FO BUY Signal", message="Forecast Oscillator BUY signal fired")
 
 // HAFTALIK AL (Weekly Buy) signal
-alertcondition(haf_sig, title="HAFTALIK AL (Weekly BUY)")
+alertcondition(haf_signal, title="HAFTALIK AL (Weekly BUY)")
